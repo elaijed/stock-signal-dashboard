@@ -13,7 +13,9 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "./supabase.js";
+import SocialPage from "./social/SocialPage.jsx";
+import { myNetwork, getSharedPortfolio } from "./social/api.js";
 
 /*
  * Stock Signal Dashboard — single-file React artifact.
@@ -94,12 +96,9 @@ import { createClient } from "@supabase/supabase-js";
 const DEFAULT_API_KEY = import.meta.env.VITE_FINNHUB_KEY || "";
 
 // ---------- accounts (Supabase) ----------
-// The publishable key is designed to ship in browser code. What keeps accounts
-// private is Row Level Security on public.portfolios: each signed-in user can
-// only select/insert/update/delete the row whose user_id is their own id.
-const SUPABASE_URL = "https://ahiapflxxoxcgltkqyde.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_qfi4t3-F_2ylZkkIlDrPgQ_AOscEcj5";
-const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Client lives in supabase.js. Row Level Security on public.portfolios: each
+// signed-in user can only select/insert/update/delete their own row; connections
+// read a filtered copy through get_shared_portfolio() (see supabase/001_social.sql).
 
 // One row per user. Its jsonb "watchlist" column holds the whole account
 // document, so adding features never needs a database migration:
@@ -2155,7 +2154,7 @@ const CONCENTRATION_LIMIT = 40; // % of portfolio in one stock or sector before 
 // Sector breakdown by current market value. Sectors come from Finnhub's company
 // profile; a holding whose profile hasn't loaded yet is shown as "Loading…"
 // rather than guessed.
-function SectorAllocation({ stats, info }) {
+function SectorAllocation({ stats, info, who = "your" }) {
   const priced = stats.filter((s) => s.value != null && s.value > 0);
   const total = priced.reduce((sum, s) => sum + s.value, 0);
   if (!total) return null;
@@ -2180,7 +2179,7 @@ function SectorAllocation({ stats, info }) {
   const topSector = rows.find((r) => r.sector !== "Loading…");
   const warnings = [];
   if (topPosPct > CONCENTRATION_LIMIT)
-    warnings.push(`${topPosPct.toFixed(0)}% of your portfolio is in one stock (${topPos.item.symbol}).`);
+    warnings.push(`${topPosPct.toFixed(0)}% of ${who} portfolio is in one stock (${topPos.item.symbol}).`);
   if (topSector && topSector.pct > CONCENTRATION_LIMIT && rows.filter((r) => r.sector !== "Loading…").length >= 1)
     warnings.push(`${topSector.pct.toFixed(0)}% is in one sector (${topSector.sector}).`);
 
@@ -2318,9 +2317,11 @@ function RealizedPnL({ transactions, onClear }) {
               ))}
             </tbody>
           </table>
-          <button onClick={onClear} className="mt-2 text-[10px] text-zinc-600 hover:text-red-300">
-            Clear history
-          </button>
+          {onClear && (
+            <button onClick={onClear} className="mt-2 text-[10px] text-zinc-600 hover:text-red-300">
+              Clear history
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -2612,6 +2613,234 @@ function AuthScreen() {
   );
 }
 
+// ---------- Social: a connection's portfolio (read-only) ----------
+
+// Compact read-only card for one of a connection's stocks.
+function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, onAdd }) {
+  const quote = data?.quote;
+  const candles = data?.candles;
+  const a = candles ? analyze(candles, quote, item) : null;
+  const owned = item.status === "owned";
+  const price = quote?.c ?? (candles?.length ? candles[candles.length - 1].close : null);
+  const dayUp = quote && quote.dp >= 0;
+  const gainPct = owned && price != null && item.buyPrice > 0 ? ((price - item.buyPrice) / item.buyPrice) * 100 : null;
+  const gainUsd = gainPct != null && item.qty > 0 ? (price - item.buyPrice) * item.qty : null;
+  return (
+    <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold tracking-wide text-zinc-100">{item.symbol}</h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+                owned ? "bg-blue-900/50 text-blue-300" : "bg-zinc-800 text-zinc-400"
+              }`}
+            >
+              {owned ? "Owns" : "Watching"}
+            </span>
+          </div>
+          <CompanyMeta info={info} />
+        </div>
+        {price != null ? (
+          <div className="text-right">
+            <div className="text-base font-semibold tabular-nums text-zinc-50">${fmt(price)}</div>
+            {quote && (
+              <div className={`text-xs tabular-nums ${dayUp ? "text-emerald-400" : "text-red-400"}`}>
+                {dayUp ? "▲" : "▼"} {fmt(Math.abs(quote.dp))}% today
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="h-8 w-20 animate-pulse rounded bg-zinc-800" />
+        )}
+      </div>
+      {owned && (
+        <div className="mb-2 grid grid-cols-3 gap-1.5">
+          <Level label="Bought at" value={item.buyPrice ? `${fmt(item.buyPrice)}` : "—"} />
+          {showDollars && item.qty != null ? (
+            <>
+              <Level label="Shares" value={`${item.qty}`} />
+              <Level label="Value" value={price != null ? `${fmt(price * item.qty)}` : "—"} />
+            </>
+          ) : (
+            <Level label="Since" value={item.purchaseDate || "—"} />
+          )}
+          {showGain && gainPct != null && (
+            <div className="col-span-3">
+              <Level
+                label="Return"
+                value={`${gainUsd != null ? `${gainUsd >= 0 ? "+" : "−"}${fmt(Math.abs(gainUsd))} ` : ""}(${gainPct >= 0 ? "+" : ""}${fmt(gainPct)}%)`}
+                tone={gainPct >= 0 ? "text-emerald-300" : "text-red-300"}
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {data?.candleError ? (
+        <div className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400">
+          {ERROR_TEXT[data.candleError] || ERROR_TEXT.other}
+        </div>
+      ) : candles ? (
+        <MiniChart candles={candles} symbol={item.symbol} />
+      ) : (
+        <div className="h-28 w-full animate-pulse rounded bg-zinc-800" />
+      )}
+      {a && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${signalChipStyle(a.signal, a.signalStrong)}`}>
+            {a.signalLabel}
+          </span>
+          <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${actionStyle(a.action)}`}>{a.action}</span>
+        </div>
+      )}
+      <div className="mt-3 border-t border-zinc-800 pt-3">
+        {inMyList ? (
+          <span className="text-xs text-zinc-500">✓ On your list</span>
+        ) : (
+          <button onClick={() => onAdd(item.symbol)} className="text-xs font-medium text-blue-400 hover:underline">
+            + Add to my watchlist
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySymbols, onAddToWatchlist }) {
+  const [pf, setPf] = useState(undefined); // undefined = loading, null = unavailable
+  const [err, setErr] = useState(null);
+  const first = (name || "").split(" ")[0] || "They";
+
+  useEffect(() => {
+    let alive = true;
+    getSharedPortfolio(uid)
+      .then((d) => alive && setPf(d))
+      .catch((e) => alive && (setErr(e.message), setPf(null)));
+    return () => {
+      alive = false;
+    };
+  }, [uid]);
+
+  const owned = pf?.owned || [];
+  const watching = pf?.watchlist || [];
+  const symbolsKey = [...owned, ...watching].map((i) => i.symbol).join(",");
+  useEffect(() => {
+    if (!symbolsKey) return;
+    let alive = true;
+    ensureSymbols(symbolsKey.split(","), () => alive);
+    return () => {
+      alive = false;
+    };
+  }, [symbolsKey, ensureSymbols]);
+
+  if (pf === undefined) return <div className="py-6 text-center text-sm text-zinc-500">Loading portfolio…</div>;
+  if (!pf)
+    return <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">{err || "Portfolio unavailable."}</div>;
+
+  const share = { holdings: true, dollars: true, unrealized: true, realized: true, watchlist: true, sectors: true, ...(pf.share || {}) };
+  const showDollars = share.dollars !== false;
+  const showGain = share.unrealized !== false;
+  const mine = new Set(mySymbols);
+
+  // same per-position stats the Owned page uses, so the summary widgets can be reused
+  const stats = owned.map((item) => {
+    const d = stockData[item.symbol];
+    const price = d?.quote?.c ?? (d?.candles?.length ? d.candles[d.candles.length - 1].close : null);
+    const qty = showDollars ? item.qty : null;
+    const value = price != null && qty != null ? price * qty : null;
+    const cost = qty != null ? item.buyPrice * qty : null;
+    const gain = value != null ? value - cost : null;
+    const gainPct = price != null && item.buyPrice > 0 ? ((price - item.buyPrice) / item.buyPrice) * 100 : null;
+    return { item, data: d, a: null, price, risk: null, value, cost, gain, gainPct };
+  });
+  const both = [...owned, ...watching].map((i) => i.symbol).filter((s) => mine.has(s));
+
+  return (
+    <div>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="text-lg font-semibold text-zinc-100">{first}'s portfolio</h3>
+        <span className="text-[11px] text-zinc-600">Read-only · live prices</span>
+      </div>
+
+      {share.holdings === false && share.watchlist === false && share.realized === false ? (
+        <div className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">{first} keeps their portfolio private.</div>
+      ) : (
+        <>
+          {owned.length > 0 && showDollars && showGain && <PortfolioSummaryBar stats={stats} />}
+          {owned.length > 0 && showGain && <PortfolioHighlights stats={stats} />}
+          {owned.length > 0 && showDollars && share.sectors !== false && <SectorAllocation stats={stats} info={stockInfo} who="their" />}
+          {pf.transactions && <RealizedPnL transactions={pf.transactions} />}
+
+          {both.length > 0 && (
+            <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-sm text-zinc-300">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">In common with you · </span>
+              {both.join(", ")}
+            </div>
+          )}
+
+          {pf.owned && (
+            <>
+              <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Owns ({owned.length})</h4>
+              {owned.length ? (
+                <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {owned.map((item) => (
+                    <FriendHoldingCard
+                      key={item.symbol}
+                      item={item}
+                      data={stockData[item.symbol]}
+                      info={stockInfo[item.symbol]}
+                      showDollars={showDollars}
+                      showGain={showGain}
+                      inMyList={mine.has(item.symbol)}
+                      onAdd={onAddToWatchlist}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="mb-5 text-sm text-zinc-500">No stocks owned right now.</div>
+              )}
+            </>
+          )}
+
+          {pf.watchlist && (
+            <>
+              <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Watching ({watching.length})</h4>
+              {watching.length ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {watching.map((item) => (
+                    <FriendHoldingCard
+                      key={item.symbol}
+                      item={item}
+                      data={stockData[item.symbol]}
+                      info={stockInfo[item.symbol]}
+                      inMyList={mine.has(item.symbol)}
+                      onAdd={onAddToWatchlist}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-zinc-500">Nothing on their watchlist.</div>
+              )}
+            </>
+          )}
+
+          {pf.alerts?.length > 0 && (
+            <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-sm text-zinc-300">
+              <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Price alerts</div>
+              {pf.alerts.map((al) => (
+                <span key={al.id} className="mr-3 inline-block text-xs">
+                  {al.symbol} {al.dir === "above" ? "≥" : "≤"} ${fmt(al.price)}
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <p className="mt-4 text-[10px] text-zinc-600">Shared by {first} for information only — not financial advice.</p>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking, null = logged out
   const [saveStatus, setSaveStatus] = useState("saved"); // "saved" | "saving" | "error"
@@ -2635,6 +2864,7 @@ export default function App() {
   const [alerts, setAlerts] = useState([]); // in-app price alerts
   const [alertModal, setAlertModal] = useState(null); // { symbol, price } | null
   const [transactions, setTransactions] = useState([]); // closed trades (realized P/L)
+  const [incomingCount, setIncomingCount] = useState(0); // pending connection requests (Social tab badge)
 
   // add-ticker form
   const [symInput, setSymInput] = useState("");
@@ -2670,7 +2900,7 @@ export default function App() {
         storageSet(KEY_APIKEY, DEFAULT_API_KEY);
       }
       const savedPage = await storageGet(KEY_PAGE);
-      if (["watchlist", "owned", "recommendations"].includes(savedPage)) setPage(savedPage);
+      if (["watchlist", "owned", "recommendations", "social"].includes(savedPage)) setPage(savedPage);
     })();
   }, []);
 
@@ -3014,6 +3244,46 @@ export default function App() {
   }, [ready, apiKey, watchlist]);
 
 
+  // Social: badge count for incoming connection requests, refreshed every 2 minutes
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let alive = true;
+    const tick = () => myNetwork().then((n) => alive && setIncomingCount(n.incoming.length)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 120_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [ready, userId]);
+  const onNetwork = useCallback((n) => setIncomingCount(n.incoming.length), []);
+
+  // Load quotes/candles (+ company profile for sectors) for a connection's
+  // stocks, sharing the same per-session cache as your own cards.
+  const ensureSymbols = useCallback(
+    async (symbols, isAlive) => {
+      if (!apiKey) return;
+      for (const sym of symbols) {
+        if (!isAlive()) return;
+        if (!fetchedCandles.current.has(sym)) {
+          await loadSymbol(sym, apiKey, { candlesToo: true });
+          await sleep(350);
+        }
+        if (!fetchedInfo.current.has(sym)) {
+          fetchedInfo.current.add(sym);
+          try {
+            const profile = await fetchProfile(sym, apiKey);
+            setStockInfo((prev) => ({ ...prev, [sym]: { ...prev[sym], profile } }));
+          } catch (_) {
+            fetchedInfo.current.delete(sym);
+          }
+          await sleep(350);
+        }
+      }
+    },
+    [apiKey, loadSymbol]
+  );
+
   async function handleAdd(e) {
     e.preventDefault();
     setAddError(null);
@@ -3227,7 +3497,8 @@ export default function App() {
             {[
               { id: "watchlist", label: "Watchlist", count: watchlist.filter((w) => w.status !== "owned").length },
               { id: "owned", label: "Owned", count: watchlist.filter((w) => w.status === "owned").length },
-              { id: "recommendations", label: "Recommendations", count: null },
+              { id: "recommendations", label: "Picks", count: null },
+              { id: "social", label: "Social", count: null, badge: incomingCount },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -3245,6 +3516,9 @@ export default function App() {
                   >
                     {tab.count}
                   </span>
+                )}
+                {tab.badge > 0 && (
+                  <span className="ml-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] text-white">{tab.badge}</span>
                 )}
               </button>
             ))}
@@ -3421,6 +3695,28 @@ export default function App() {
               Add a Finnhub API key in Settings to run the daily screen.
             </div>
           ))}
+
+        {/* ===================== SOCIAL PAGE ===================== */}
+        {page === "social" && (
+          <SocialPage
+            uid={userId}
+            email={session.user.email}
+            counts={{ owned_count: owned.length, watching_count: watching.length }}
+            onNetwork={onNetwork}
+            renderPortfolio={(uid, name) => (
+              <FriendPortfolio
+                key={uid}
+                uid={uid}
+                name={name}
+                stockData={stockData}
+                stockInfo={stockInfo}
+                ensureSymbols={ensureSymbols}
+                mySymbols={watchlist.map((w) => w.symbol)}
+                onAddToWatchlist={handleAddPick}
+              />
+            )}
+          />
+        )}
 
         <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">
           Educational tool only, not financial advice.
