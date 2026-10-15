@@ -23,6 +23,10 @@ import Feed from "./social/Feed.jsx";
 import NotificationsBell from "./social/Notifications.jsx";
 import { explainStock, levelsExplained, positionSentence, backtestSentence, pickReason } from "./ui/explain.js";
 import { Info, VerdictBar, WhyPanel, Collapsible, FriendsStack, Toast } from "./ui/components.jsx";
+import Home, { GlossaryPage } from "./ui/home.jsx";
+import { PracticePage, PracticeTradeModal, applyPaperTrade, newPaper } from "./ui/practice.jsx";
+import ShareModal from "./ui/share.jsx";
+import { challengeBoard } from "./social/api.js";
 import { PerformanceChart, TodayStrip, useDigest, DigestCard, EarningsList, DividendsCard, Welcome } from "./ui/portfolio.jsx";
 
 /*
@@ -119,6 +123,8 @@ function parseAccountDoc(raw) {
     alerts: Array.isArray(raw?.alerts) ? raw.alerts : [],
     transactions: Array.isArray(raw?.transactions) ? raw.transactions : [],
     events: Array.isArray(raw?.events) ? raw.events : [],
+    paper: raw?.paper && typeof raw.paper === "object" ? raw.paper : null,
+    onboarding: raw?.onboarding && typeof raw.onboarding === "object" ? raw.onboarding : {},
   };
 }
 
@@ -132,7 +138,7 @@ async function loadAccount(userId) {
 async function saveAccount(userId, doc) {
   const { error } = await supabase.from("portfolios").upsert({
     user_id: userId,
-    watchlist: { v: 1, watchlist: doc.watchlist, alerts: doc.alerts, transactions: doc.transactions, events: doc.events || [] },
+    watchlist: { v: 1, watchlist: doc.watchlist, alerts: doc.alerts, transactions: doc.transactions, events: doc.events || [], paper: doc.paper || null, onboarding: doc.onboarding || {} },
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
@@ -1619,7 +1625,7 @@ function StockCard({ item, data, info, alerts, onSetAlert, onDeleteAlert, onBuy,
 
       <FriendsStack owners={friends?.owners || []} watchers={friends?.watchers || []} onOpen={() => onOpen(item.symbol)} />
       <VerdictBar ex={ex} />
-      <WhyPanel ex={ex} />
+      <WhyPanel ex={ex} compact />
 
       <AlertChips symbol={item.symbol} alerts={alerts} price={quote?.c} onAdd={onSetAlert} onDelete={onDeleteAlert} />
 
@@ -1738,7 +1744,7 @@ function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, frie
 
       <FriendsStack owners={friends?.owners || []} watchers={friends?.watchers || []} onOpen={() => onOpen(item.symbol)} />
       <VerdictBar ex={ex} />
-      <WhyPanel ex={ex} />
+      <WhyPanel ex={ex} compact />
 
       <AlertChips symbol={item.symbol} alerts={alerts} price={price} onAdd={onSetAlert} onDelete={onDeleteAlert} />
 
@@ -1788,7 +1794,7 @@ function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, frie
 }
 
 // Full-screen stock page: big chart, the reasoning, what-if, friends, polls, news
-function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile }) {
+function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile, onPractice, onShare }) {
   const quote = data?.quote;
   const candles = data?.candles;
   const a = candles ? analyze(candles, quote, item || { symbol, status: "watching" }) : null;
@@ -1823,7 +1829,17 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
           <button onClick={onClose} className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">
             ← Back
           </button>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={() => onShare(symbol)} className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">
+              ↗ Share
+            </button>
+            <button
+              onClick={() => onPractice(symbol, quote?.c)}
+              disabled={!quote}
+              className="rounded-lg border border-violet-700 bg-violet-900/30 px-3 py-1.5 text-sm font-medium text-violet-200 hover:bg-violet-900/50 disabled:opacity-40"
+            >
+              🎮 Practice buy
+            </button>
             {!inList ? (
               <button onClick={() => onAdd(symbol)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
                 + Watchlist
@@ -2091,7 +2107,7 @@ function SellModal({ open, symbol, price, onConfirm, onClose }) {
 }
 
 // avatar menu in the header
-function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onWelcome, onLogout, saveStatus }) {
+function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onWelcome, onLearn, onLogout, saveStatus }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -2130,6 +2146,9 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
           <button className={item} onClick={() => (setOpen(false), onSettings())}>
             ⚙️ Settings (data key)
           </button>
+          <button className={item} onClick={() => (setOpen(false), onLearn())}>
+            📖 Learn & glossary
+          </button>
           <button className={item} onClick={() => (setOpen(false), onWelcome())}>
             💡 Show welcome tips
           </button>
@@ -2143,9 +2162,9 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
 }
 
 const NAV = [
-  { id: "watchlist", label: "Watchlist", icon: "👁" },
-  { id: "owned", label: "Owned", icon: "💼" },
-  { id: "recommendations", label: "Picks", icon: "⭐" },
+  { id: "home", label: "Home", icon: "🏠" },
+  { id: "watchlist", label: "My Stocks", icon: "📈", also: ["owned"] },
+  { id: "recommendations", label: "Discover", icon: "⭐" },
   { id: "social", label: "Social", icon: "👥" },
 ];
 
@@ -2157,7 +2176,7 @@ function BottomNav({ page, onGo, badges }) {
           <button
             key={t.id}
             onClick={() => onGo(t.id)}
-            className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${page === t.id ? "text-blue-400" : "text-zinc-500"}`}
+            className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${page === t.id || t.also?.includes(page) ? "text-blue-400" : "text-zinc-500"}`}
           >
             <span className="text-lg leading-none">{t.icon}</span>
             {t.label}
@@ -3290,7 +3309,7 @@ export default function App() {
   const saveTimer = useRef(null);
   const [apiKey, setApiKey] = useState(null);
   const [ready, setReady] = useState(false); // account data loaded
-  const [page, setPage] = useState("watchlist"); // "watchlist" | "recommendations"
+  const [page, setPage] = useState("home"); // "watchlist" | "recommendations"
   const [watchlist, setWatchlist] = useState([]);
   const [stockData, setStockData] = useState({}); // symbol -> {quote, candles, quoteError, candleError}
   const [stockInfo, setStockInfo] = useState({}); // symbol -> {profile, metric, rec, earnings, news} (richer info)
@@ -3316,6 +3335,19 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [sellModal, setSellModal] = useState(null); // { symbol, price }
   const [showWelcome, setShowWelcome] = useState(false);
+  const [paper, setPaper] = useState(null); // practice portfolio (pretend $10,000)
+  const [practiceModal, setPracticeModal] = useState(null); // { side, symbol, price }
+  const [shareSymbol, setShareSymbol] = useState(null);
+  const [onboarding, setOnboarding] = useState({});
+  const [connCount, setConnCount] = useState(0);
+  const [joinedChallenge, setJoinedChallenge] = useState(false);
+  const [didWhy, setDidWhy] = useState(() => {
+    try {
+      return localStorage.getItem("ssd_did_why") === "1";
+    } catch (_) {
+      return false;
+    }
+  });
   const [benchCandles, setBenchCandles] = useState(null); // SPY, for the performance chart
 
   // add-ticker form
@@ -3360,7 +3392,7 @@ export default function App() {
         storageSet(KEY_APIKEY, DEFAULT_API_KEY);
       }
       const savedPage = await storageGet(KEY_PAGE);
-      if (["watchlist", "owned", "recommendations", "social"].includes(savedPage)) setPage(savedPage);
+      if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn"].includes(savedPage)) setPage(savedPage);
     })();
   }, []);
 
@@ -3428,6 +3460,8 @@ export default function App() {
         setWatchlist(doc.watchlist);
         setAlerts(doc.alerts);
         setTransactions(doc.transactions);
+        setPaper(doc.paper || null);
+        setOnboarding(doc.onboarding || {});
         setSaveStatus("saved");
         setReady(true);
       } catch (e) {
@@ -3488,6 +3522,23 @@ export default function App() {
     (list) => {
       setAlerts(list);
       accountRef.current = { ...accountRef.current, alerts: list };
+      scheduleSave();
+    },
+    [scheduleSave]
+  );
+
+  const persistPaper = useCallback(
+    (p) => {
+      setPaper(p);
+      accountRef.current = { ...accountRef.current, paper: p };
+      scheduleSave();
+    },
+    [scheduleSave]
+  );
+  const persistOnboarding = useCallback(
+    (o) => {
+      setOnboarding(o);
+      accountRef.current = { ...accountRef.current, onboarding: o };
       scheduleSave();
     },
     [scheduleSave]
@@ -3726,7 +3777,14 @@ export default function App() {
   useEffect(() => {
     if (!ready || !userId) return;
     let alive = true;
-    const tick = () => myNetwork().then((n) => alive && setIncomingCount(n.incoming.length)).catch(() => {});
+    const tick = () =>
+      myNetwork()
+        .then((n) => {
+          if (!alive) return;
+          setIncomingCount(n.incoming.length);
+          setConnCount(n.connections.length);
+        })
+        .catch(() => {});
     tick();
     const id = setInterval(tick, 120_000);
     return () => {
@@ -3734,7 +3792,45 @@ export default function App() {
       clearInterval(id);
     };
   }, [ready, userId]);
-  const onNetwork = useCallback((n) => setIncomingCount(n.incoming.length), []);
+  const onNetwork = useCallback((n) => {
+    setIncomingCount(n.incoming.length);
+    setConnCount(n.connections.length);
+  }, []);
+
+  // weekly check-in (keeps your 🔥 streak alive) + first-week checklist state
+  useEffect(() => {
+    if (!ready || !userId) return;
+    const d = new Date();
+    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).toISOString().slice(0, 10);
+    const k = `ssd_checkin_${userId}`;
+    let last = null;
+    try {
+      last = localStorage.getItem(k);
+    } catch (_) {}
+    if (last !== monday) {
+      postActivity(userId, "checkin", null, {}).then(() => {
+        try {
+          localStorage.setItem(k, monday);
+        } catch (_) {}
+      }).catch(() => {});
+    }
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    challengeBoard(month).then((rows) => setJoinedChallenge(rows.some((r) => r.me))).catch(() => {});
+    const onWhy = () => setDidWhy(true);
+    window.addEventListener("ssd-did-why", onWhy);
+    return () => window.removeEventListener("ssd-did-why", onWhy);
+  }, [ready, userId]);
+
+  // deep link: ?stock=NVDA opens that stock's page
+  useEffect(() => {
+    if (!ready) return;
+    const sym = new URLSearchParams(window.location.search).get("stock");
+    if (sym && /^[A-Za-z0-9.\-]{1,12}$/.test(sym)) {
+      history.replaceState(null, "", window.location.pathname + window.location.hash);
+      setTimeout(() => openStockRef.current?.(sym.toUpperCase()), 0);
+    }
+  }, [ready]);
+  const openStockRef = useRef(null);
 
   // your profile (header avatar, invite code)
   useEffect(() => {
@@ -3863,13 +3959,26 @@ export default function App() {
     },
     [goToPage]
   );
+  openStockRef.current = openStock;
   const getQuote = useCallback((sym) => fetchQuote(sym, apiKey), [apiKey]);
+
+  function practiceTrade(qty) {
+    const m = practiceModal;
+    const price = m.price ?? stockData[m.symbol]?.quote?.c;
+    const next = applyPaperTrade(paper, m.side, m.symbol, qty, price); // throws friendly errors to the modal
+    persistPaper(next);
+    setPracticeModal(null);
+    setDetail(null);
+    setToast(`Practice ${m.side} done: ${qty} ${m.symbol}`);
+    goToPage("practice");
+  }
   const quoteOf = useCallback((sym) => stockData[sym], [stockData]);
 
   function onNotification(n) {
     if (n.kind === "request") goSocial("requests");
     else if (n.kind === "accepted" || n.kind === "joined") openProfile(n.actor?.id);
-    else if (n.kind === "group_add") goSocial("groups", { groupId: n.group_id });
+    else if (n.kind === "group_add" || n.kind === "group_post") goSocial("groups", { groupId: n.group_id });
+    else if (n.kind === "share" && n.data?.symbol) openStock(n.data.symbol);
     else goSocial("feed");
   }
 
@@ -4098,6 +4207,16 @@ export default function App() {
   }
 
   const unread = notifs.filter((n) => !n.read).length;
+  const firstSym = watchlist[0]?.symbol;
+  const steps = onboarding.dismissed
+    ? null
+    : [
+        { label: "Add a stock you're curious about", done: watchlist.length > 0, cta: "Add", go: () => goToPage("watchlist") },
+        { label: "Read a “Why?” to see the reasoning", done: didWhy, cta: "Show me", go: () => (firstSym ? openStock(firstSym) : goToPage("watchlist")) },
+        { label: "Connect with a friend", done: connCount > 0, cta: "Find friends", go: () => goSocial("friends") },
+        { label: "Make a practice buy with pretend money", done: !!paper?.trades?.length, cta: "Practice", go: () => goToPage("practice") },
+        { label: "Join this month's pick challenge", done: joinedChallenge, cta: "Join", go: () => goSocial("compete") },
+      ];
   const breached = ownedStats.filter((st) => st.risk?.breachedStop).length;
   const allSymbols = watchlist.map((w) => w.symbol);
   const detailItem = detail ? watchlist.find((w) => w.symbol === detail) : null;
@@ -4106,11 +4225,29 @@ export default function App() {
     else goToPage(to);
   };
   const tabs = [
-    { id: "watchlist", label: "Watchlist", count: watching.length },
-    { id: "owned", label: "Owned", count: owned.length },
-    { id: "recommendations", label: "Picks", count: null },
+    { id: "home", label: "Home", count: null },
+    { id: "watchlist", label: "My Stocks", count: watchlist.length, also: ["owned", "practice"] },
+    { id: "recommendations", label: "Discover", count: null },
     { id: "social", label: "Social", count: null, badge: incomingCount },
   ];
+  // Watching / Owned switch shown at the top of My Stocks
+  const stocksSwitch = (
+    <div className="mb-4 flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+      {[
+        ["watchlist", `👁 Watching (${watching.length})`],
+        ["owned", `💼 Owned (${owned.length})`],
+        ["practice", "🎮 Practice"],
+      ].map(([id, label]) => (
+        <button
+          key={id}
+          onClick={() => goToPage(id)}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${page === id ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-zinc-950 font-sans text-zinc-200">
@@ -4118,7 +4255,7 @@ export default function App() {
         {/* header */}
         <header className="mb-4">
           <div className="mb-3 flex items-center gap-3">
-            <button onClick={() => goToPage("watchlist")} className="flex shrink-0 items-center gap-2">
+            <button onClick={() => goToPage("home")} className="flex shrink-0 items-center gap-2">
               <img src="./icon.svg" alt="" className="h-8 w-8 rounded-lg" />
               <span className="hidden text-lg font-bold tracking-tight text-zinc-50 md:inline">Stock Signals</span>
             </button>
@@ -4132,6 +4269,7 @@ export default function App() {
               theme={theme}
               onTheme={setTheme}
               onSettings={() => setSettingsOpen(true)}
+              onLearn={() => goToPage("learn")}
               onProfile={() => goSocial("me")}
               onWelcome={() => (setShowWelcome(true), goToPage("watchlist"))}
               onLogout={handleLogout}
@@ -4145,7 +4283,7 @@ export default function App() {
                 key={tab.id}
                 onClick={() => goToPage(tab.id)}
                 className={`flex-1 min-w-0 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                  page === tab.id ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                  page === tab.id || tab.also?.includes(page) ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
                 {tab.label}
@@ -4160,7 +4298,59 @@ export default function App() {
           </nav>
         </header>
 
-        {apiKey && <TodayStrip ownedStats={ownedStats} alerts={alerts} breached={breached} incoming={incomingCount} unread={unread} onNav={goNav} />}
+        {apiKey && page === "home" && <TodayStrip ownedStats={ownedStats} alerts={alerts} breached={breached} incoming={incomingCount} unread={unread} onNav={goNav} />}
+
+        {/* ===================== HOME ===================== */}
+        {page === "home" &&
+          (!apiKey || watchlist.length === 0 ? (
+            <Welcome hasKey={!!apiKey} onAdd={(s) => (handleAddPick(s), goToPage("watchlist"))} onOpenSettings={() => setSettingsOpen(true)} />
+          ) : null)}
+        {page === "home" && (
+          <Home
+            uid={userId}
+            name={myProfile?.full_name}
+            ownedStats={ownedStats}
+            benchCandles={benchCandles}
+            alerts={alerts}
+            notifs={notifs}
+            onRefreshNotifs={refreshNotifs}
+            digest={digest}
+            stockInfo={stockInfo}
+            symbols={allSymbols}
+            pickCache={pickCache}
+            watchlist={watchlist}
+            onOpenStock={openStock}
+            onOpenProfile={openProfile}
+            onGo={goToPage}
+            onGoSocial={goSocial}
+            onAdd={handleAddPick}
+            onNotification={onNotification}
+            steps={steps}
+            onDismissSteps={() => persistOnboarding({ ...onboarding, dismissed: true })}
+            stockData={stockData}
+            ensureSymbols={ensureSymbols}
+            onToast={setToast}
+          />
+        )}
+
+        {/* ===================== PRACTICE ===================== */}
+        {page === "practice" && (
+          <>
+            {stocksSwitch}
+            <PracticePage
+              paper={paper}
+              stockData={stockData}
+              ensureSymbols={ensureSymbols}
+              onStart={() => persistPaper(newPaper())}
+              onReset={() => persistPaper(newPaper())}
+              onTrade={(side, symbol, price) => setPracticeModal({ side, symbol, price })}
+              onOpenStock={openStock}
+            />
+          </>
+        )}
+
+        {/* ===================== LEARN ===================== */}
+        {page === "learn" && <GlossaryPage />}
 
         {/* fired price alerts — shown on every page until dismissed */}
         <TriggeredAlertsBanner alerts={alerts} onDismiss={deleteAlert} />
@@ -4168,7 +4358,8 @@ export default function App() {
         {/* ===================== WATCHLIST PAGE ===================== */}
         {page === "watchlist" && (
           <>
-            {(!apiKey || showWelcome || watchlist.length === 0) && (
+            {stocksSwitch}
+            {(!apiKey || showWelcome) && (
               <div className="relative">
                 {showWelcome && watchlist.length > 0 && (
                   <button onClick={() => setShowWelcome(false)} className="absolute right-3 top-3 z-10 text-zinc-500 hover:text-zinc-200" title="Close">
@@ -4179,12 +4370,6 @@ export default function App() {
               </div>
             )}
 
-            {watchlist.length > 0 && (
-              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <DigestCard changes={digest.changes} ownedStats={ownedStats} stockInfo={stockInfo} symbols={allSymbols} onOpenStock={openStock} />
-                <EarningsList symbols={allSymbols} stockInfo={stockInfo} onOpenStock={openStock} />
-              </div>
-            )}
 
             <form onSubmit={handleAdd} className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
               <div className="flex flex-col">
@@ -4251,7 +4436,7 @@ export default function App() {
                 <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
                   Nothing on your watchlist right now. Add a stock above, or check{" "}
                   <button onClick={() => goToPage("recommendations")} className="text-blue-400 hover:underline">
-                    Picks
+                    Discover
                   </button>{" "}
                   for ideas.
                 </div>
@@ -4281,6 +4466,7 @@ export default function App() {
         {/* ===================== OWNED PAGE ===================== */}
         {page === "owned" && (
           <>
+            {stocksSwitch}
             {owned.length === 0 ? (
               <div className="mb-4 rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
                 You don't own any stocks yet. Add a stock on the{" "}
@@ -4294,9 +4480,9 @@ export default function App() {
                 <PortfolioSummaryBar stats={ownedStats} />
                 <PerformanceChart owned={owned} stockData={stockData} benchCandles={benchCandles} />
                 <PortfolioHighlights stats={ownedStats} />
-                <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="mb-4">
                   <DividendsCard ownedStats={ownedStats} stockInfo={stockInfo} />
-                  <EarningsList symbols={owned.map((o) => o.symbol)} stockInfo={stockInfo} onOpenStock={openStock} />
+
                 </div>
                 <SectorAllocation stats={ownedStats} info={stockInfo} />
               </>
@@ -4390,8 +4576,21 @@ export default function App() {
           onSetAlert={openAlert}
           onDeleteAlert={deleteAlert}
           onOpenProfile={openProfile}
+          onPractice={(symbol, price) => setPracticeModal({ side: "buy", symbol, price })}
+          onShare={setShareSymbol}
         />
       )}
+
+      <PracticeTradeModal
+        open={!!practiceModal}
+        side={practiceModal?.side}
+        symbol={practiceModal?.symbol}
+        price={practiceModal?.price ?? stockData[practiceModal?.symbol]?.quote?.c}
+        paper={paper || newPaper()}
+        onConfirm={practiceTrade}
+        onClose={() => setPracticeModal(null)}
+      />
+      <ShareModal open={!!shareSymbol} uid={userId} symbol={shareSymbol} onClose={() => setShareSymbol(null)} onDone={setToast} />
 
       <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} />
 
