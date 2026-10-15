@@ -493,7 +493,7 @@ export default function ProfileEditor({ uid, email, profile, counts, onSaved, on
               onChange={(v) => setPrivacy({ share: { ...SHARE_DEFAULTS, ...row.share, [o.id]: v } })}
               label={o.label}
               hint={o.hint}
-              disabled={o.id !== "holdings" && o.id !== "watchlist" && o.id !== "realized" && o.id !== "alerts" && !shareVal("holdings")}
+              disabled={["dollars", "unrealized", "sectors", "leaderboard"].includes(o.id) && !shareVal("holdings")}
             />
           ))}
         </div>

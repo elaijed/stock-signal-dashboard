@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import ProfileView from "./ProfileView.jsx";
 import ProfileEditor from "./ProfileEditor.jsx";
+import Feed from "./Feed.jsx";
+import Groups from "./Groups.jsx";
+import Compete from "./Compete.jsx";
 import {
   loadMyProfile, updateMyProfile, searchProfiles, getProfile, suggestedProfiles, myNetwork,
   acceptRequestFrom, removeConnectionWith, unblockUser,
@@ -36,8 +39,49 @@ function Empty({ children }) {
   return <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">{children}</div>;
 }
 
-export default function SocialPage({ uid, email, counts, renderPortfolio, onNetwork }) {
-  const [tab, setTab] = useState("discover");
+// Personal invite link (optionally carrying your market-data key so friends can use the app right away)
+function InviteBox({ me, apiKey }) {
+  const [withKey, setWithKey] = useState(true);
+  const [copied, setCopied] = useState(false);
+  if (!me?.invite_code) return null;
+  const base = `${window.location.origin}${window.location.pathname}?invite=${me.invite_code}`;
+  const link = withKey && apiKey ? `${base}#key=${apiKey}` : base;
+  async function copy() {
+    try {
+      if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+        await navigator.share({ title: "Join me on Stock Signals", text: "Follow my portfolio and stock picks:", url: link });
+      } else {
+        await navigator.clipboard.writeText(link);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (_) {}
+  }
+  return (
+    <div className="rounded-xl border border-blue-900/60 bg-blue-950/20 p-3">
+      <div className="text-sm font-semibold text-blue-200">📨 Invite friends</div>
+      <div className="mb-2 text-xs text-blue-300/70">Anyone who signs up with your link is connected with you automatically.</div>
+      <div className="flex gap-2">
+        <input readOnly value={link} onFocus={(e) => e.target.select()} className="min-w-0 flex-1 truncate rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300" />
+        <button onClick={copy} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500">
+          {copied ? "Copied ✓" : "Copy link"}
+        </button>
+      </div>
+      {apiKey && (
+        <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <input type="checkbox" checked={withKey} onChange={(e) => setWithKey(e.target.checked)} /> Include my market-data key so prices work for them right away (only share with people you trust)
+        </label>
+      )}
+    </div>
+  );
+}
+
+export default function SocialPage({
+  uid, email, counts, renderPortfolio, onNetwork, route, onProfile, apiKey,
+  onOpenStock, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist,
+}) {
+  const [tab, setTab] = useState(route?.tab || "feed");
+  const [groupRoute, setGroupRoute] = useState(null);
   const [me, setMe] = useState(undefined); // undefined = loading, null = no profile yet
   const [editing, setEditing] = useState(false);
   const [network, setNetwork] = useState(null);
@@ -50,19 +94,27 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
   const [connFilter, setConnFilter] = useState("");
   const [err, setErr] = useState(null);
 
+  const onNetworkRef = useRef(onNetwork);
+  onNetworkRef.current = onNetwork;
+  const onProfileRef = useRef(onProfile);
+  onProfileRef.current = onProfile;
+
   const refreshNetwork = useCallback(async () => {
     try {
       const n = await myNetwork();
       setNetwork(n);
-      onNetwork?.(n);
+      onNetworkRef.current?.(n);
     } catch (e) {
       setErr(e.message);
     }
-  }, [onNetwork]);
+  }, []);
 
   useEffect(() => {
     loadMyProfile(uid)
-      .then((p) => setMe(p))
+      .then((p) => {
+        setMe(p);
+        onProfileRef.current?.(p);
+      })
       .catch((e) => {
         setErr(e.message);
         setMe(null);
@@ -73,6 +125,22 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
   useEffect(() => {
     if (me) suggestedProfiles().then(setSuggested).catch(() => {});
   }, [me]);
+
+  // navigation requests from outside (notifications, feed avatars, leaderboard…)
+  useEffect(() => {
+    if (!route) return;
+    if (route.tab) setTab(route.tab);
+    if (route.groupId) setGroupRoute(route.groupId);
+    if (route.profileId && route.profileId !== uid) {
+      setOpenId(route.profileId);
+      setOpened(undefined);
+      getProfile(route.profileId).then(setOpened).catch(() => setOpened(null));
+    } else {
+      setOpenId(null);
+    }
+    refreshNetwork();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.n]);
 
   // live search (debounced)
   useEffect(() => {
@@ -145,6 +213,7 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
           counts={counts}
           onSaved={(p) => {
             setMe(p);
+            onProfile?.(p);
             if (me === null) setEditing(false);
           }}
           onCancel={me ? () => setEditing(false) : null}
@@ -178,7 +247,12 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
             }}
           >
             {opened.relation === "connected" ? (
-              <div className="mt-6">{renderPortfolio(opened.id, opened.full_name)}</div>
+              <>
+                <div className="mt-6">{renderPortfolio(opened.id, opened.full_name)}</div>
+                <h3 className="mb-2 mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Recent activity</h3>
+                <Feed uid={uid} user={opened.id} showComposer={false} limit={10} onOpenStock={onOpenStock} onOpenProfile={openProfile}
+                  emptyText={`${opened.full_name.split(" ")[0]} hasn't posted anything yet.`} />
+              </>
             ) : (
               <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-center text-sm text-zinc-500">
                 🔒 Connect with {opened.full_name.split(" ")[0]} to see their portfolio.
@@ -199,11 +273,15 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
   );
 
   const tabs = [
+    { id: "feed", label: "Feed" },
     { id: "discover", label: "Discover" },
     { id: "requests", label: "Requests", badge: incoming.length },
-    { id: "connections", label: "Connections", count: connections.length },
-    { id: "me", label: "My profile" },
+    { id: "connections", label: "Friends", count: connections.length },
+    { id: "groups", label: "Groups" },
+    { id: "compete", label: "Compete" },
+    { id: "me", label: "Me" },
   ];
+  const shared = { uid, onOpenStock, onOpenProfile: openProfile, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist };
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -212,7 +290,7 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex-1 whitespace-nowrap rounded-md px-1.5 sm:px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
+            className={`shrink-0 grow whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
               tab === t.id ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
@@ -232,8 +310,27 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
         </div>
       )}
 
+      {tab === "feed" && (
+        <div className="space-y-3">
+          {connections.length === 0 && (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+              Your feed fills up with what your connections buy, sell, post and ask.{" "}
+              <button onClick={() => setTab("discover")} className="font-medium text-blue-400 hover:underline">
+                Find people →
+              </button>
+            </div>
+          )}
+          <Feed uid={uid} onOpenStock={onOpenStock} onOpenProfile={openProfile} />
+        </div>
+      )}
+
+      {tab === "groups" && <Groups {...shared} openGroupId={groupRoute} />}
+
+      {tab === "compete" && <Compete {...shared} me={me} setMe={(p) => (setMe(p), onProfile?.(p))} />}
+
       {tab === "discover" && (
         <div className="space-y-4">
+          <InviteBox me={me} apiKey={apiKey} />
           <div className="relative">
             <span className="absolute left-3 top-2.5 text-zinc-500">🔍</span>
             <input
@@ -389,6 +486,7 @@ export default function SocialPage({ uid, email, counts, renderPortfolio, onNetw
         </div>
       )}
 
+      {tab === "me" && <div className="mb-3"><InviteBox me={me} apiKey={apiKey} /></div>}
       {tab === "me" && (
         <ProfileView profile={{ ...me, relation: "self", member_since: me.created_at, ...(counts || {}) }} preview>
           <div className="mt-3 flex justify-end">

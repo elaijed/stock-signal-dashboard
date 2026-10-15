@@ -1,7 +1,45 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import { BANNERS, EXPERIENCE, RISK, LINKS, safeUrl } from "./constants.js";
-import { sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, reportUser } from "./api.js";
+import { sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, reportUser, getBadges } from "./api.js";
+
+// Badges earned from real activity (computed by the database)
+export function badgeList(b) {
+  if (!b) return [];
+  const out = [];
+  if (b.member_since && new Date(b.member_since) < new Date("2027-01-01")) out.push(["🌱", "Early member", "Joined in the first months"]);
+  if (b.targets >= 5) out.push(["🎯", "Sharpshooter", `Hit ${b.targets} targets`]);
+  else if (b.targets >= 1) out.push(["🎯", "On target", "Hit a price target"]);
+  if (b.wins >= 3) out.push(["💰", "Profit taker", `${b.wins} winning trades`]);
+  if (b.notes >= 10) out.push(["🧠", "Thinker", `Wrote ${b.notes} trade notes`]);
+  else if (b.notes >= 1) out.push(["✍️", "Explainer", "Shared why they traded"]);
+  if (b.connections >= 5) out.push(["🤝", "Connector", `${b.connections} connections`]);
+  if (b.polls >= 3) out.push(["🗳", "Pollster", `Ran ${b.polls} polls`]);
+  if (b.challenges >= 1) out.push(["🏁", "Challenger", `Entered ${b.challenges} monthly challenge${b.challenges === 1 ? "" : "s"}`]);
+  if (b.trades >= 10) out.push(["📈", "Active trader", `${b.trades} trades logged`]);
+  return out;
+}
+
+function Badges({ uid }) {
+  const [b, setB] = useState(null);
+  useEffect(() => {
+    if (uid) getBadges(uid).then(setB).catch(() => {});
+  }, [uid]);
+  const list = badgeList(b);
+  if (!list.length) return null;
+  return (
+    <div className="mt-5">
+      <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Badges</div>
+      <div className="flex flex-wrap gap-1.5">
+        {list.map(([icon, name, hint]) => (
+          <span key={name} title={hint} className="rounded-full border border-amber-700/50 bg-amber-900/20 px-2.5 py-1 text-xs text-amber-200">
+            {icon} {name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const label = (list, id) => list.find((o) => o.id === id)?.label || id;
 
@@ -295,6 +333,8 @@ export default function ProfileView({ profile: p, myId, hasMyProfile, preview, o
               ))}
             </div>
           )}
+
+          {!preview || p.relation === "self" ? <Badges uid={p.id} /> : null}
 
           {hasCounts && (
             <div className="mt-5 grid grid-cols-3 gap-2">

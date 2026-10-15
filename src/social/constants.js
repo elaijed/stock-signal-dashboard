@@ -58,8 +58,10 @@ export const SHARE_OPTIONS = [
   { id: "watchlist", label: "Watchlist", hint: "Stocks you're watching" },
   { id: "sectors", label: "Sector allocation", hint: "How your portfolio splits across sectors" },
   { id: "alerts", label: "Price alerts", hint: "Your price alert levels" },
+  { id: "activity", label: "Show my activity in friends' feeds", hint: "Buys, sells, targets hit and new watches (follows the settings above)" },
+  { id: "leaderboard", label: "Appear on friends' leaderboard", hint: "Your % return only — never dollar amounts" },
 ];
-export const SHARE_DEFAULTS = { holdings: true, dollars: true, unrealized: true, realized: true, watchlist: true, sectors: true, alerts: false };
+export const SHARE_DEFAULTS = { holdings: true, dollars: true, unrealized: true, realized: true, watchlist: true, sectors: true, alerts: false, activity: true, leaderboard: false };
 
 export const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 

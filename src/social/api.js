@@ -104,3 +104,79 @@ function squareJpeg(file, size) {
 export async function updateMyProfile(uid, patch) {
   return check(await supabase.from("profiles").update(patch).eq("id", uid).select().single());
 }
+
+// ---------- feed / activity ----------
+export async function postActivity(uid, kind, symbol, data = {}, note = null) {
+  return check(
+    await supabase
+      .from("activity")
+      .insert({ user_id: uid, kind, symbol: symbol || null, data, note: note?.trim() ? note.trim().slice(0, 280) : null })
+      .select("id")
+      .single()
+  );
+}
+export async function deleteActivity(id) {
+  check(await supabase.from("activity").delete().eq("id", id));
+}
+export const getFeed = async ({ before = null, limit = 30, user = null, symbol = null } = {}) =>
+  check(await supabase.rpc("get_feed", { before_id: before, lim: limit, only_user: user, only_symbol: symbol })) || [];
+
+export async function toggleReaction(uid, activityId, emoji, on) {
+  if (on) check(await supabase.from("activity_reactions").insert({ activity_id: activityId, user_id: uid, emoji }));
+  else check(await supabase.from("activity_reactions").delete().eq("activity_id", activityId).eq("user_id", uid).eq("emoji", emoji));
+}
+export async function addComment(uid, activityId, body) {
+  check(await supabase.from("activity_comments").insert({ activity_id: activityId, user_id: uid, body: body.trim().slice(0, 300) }));
+}
+export async function deleteComment(id) {
+  check(await supabase.from("activity_comments").delete().eq("id", id));
+}
+export async function votePoll(uid, activityId, choice) {
+  check(await supabase.from("poll_votes").upsert({ activity_id: activityId, user_id: uid, choice }));
+}
+
+// ---------- notifications ----------
+export const myNotifications = async () => check(await supabase.rpc("my_notifications")) || [];
+export async function markNotificationsRead(uid) {
+  check(await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", uid).is("read_at", null));
+}
+
+// ---------- friends' stocks / competition ----------
+export const networkSymbols = async () => check(await supabase.rpc("network_symbols")) || [];
+export const leaderboard = async () => check(await supabase.rpc("leaderboard")) || [];
+export const challengeBoard = async (month) => check(await supabase.rpc("challenge_board", { m: month })) || [];
+export async function enterChallenge(uid, month, symbols, startPrices) {
+  check(await supabase.from("challenge_entries").upsert({ user_id: uid, month, symbols, start_prices: startPrices }));
+}
+export const getBadges = async (uid) => check(await supabase.rpc("badges", { uid }));
+
+// ---------- invites ----------
+export const acceptInvite = async (code) => check(await supabase.rpc("accept_invite", { code }));
+
+// ---------- groups ----------
+export const myGroups = async () => check(await supabase.rpc("my_groups")) || [];
+export const groupDetail = async (gid) => check(await supabase.rpc("group_detail", { gid }));
+export async function createGroup(uid, name, description) {
+  return check(await supabase.from("groups").insert({ owner: uid, name: name.trim(), description: description?.trim() || null }).select().single());
+}
+export async function deleteGroup(gid) {
+  check(await supabase.from("groups").delete().eq("id", gid));
+}
+export async function addGroupMember(uid, gid, memberId) {
+  check(await supabase.from("group_members").insert({ group_id: gid, user_id: memberId, added_by: uid }));
+}
+export async function removeGroupMember(gid, memberId) {
+  check(await supabase.from("group_members").delete().eq("group_id", gid).eq("user_id", memberId));
+}
+export async function addGroupSymbol(uid, gid, symbol) {
+  check(await supabase.from("group_symbols").insert({ group_id: gid, symbol: symbol.trim().toUpperCase(), added_by: uid }));
+}
+export async function removeGroupSymbol(gid, symbol) {
+  check(await supabase.from("group_symbols").delete().eq("group_id", gid).eq("symbol", symbol));
+}
+export async function addGroupPost(uid, gid, body) {
+  check(await supabase.from("group_posts").insert({ group_id: gid, user_id: uid, body: body.trim().slice(0, 500) }));
+}
+export async function deleteGroupPost(id) {
+  check(await supabase.from("group_posts").delete().eq("id", id));
+}
