@@ -17,3 +17,18 @@ and don't ask them to run commands unless there is no other way.
   (S&P 500 + PICK_POOL + extras + `tickers.txt`); add a ticker there to chart it online.
 - The Finnhub key is NOT in the code: locally it comes from `.env.local` (VITE_FINNHUB_KEY, gitignored);
   online, open the site once with `#key=<key>` on the URL (or paste it in Settings) per device.
+- Social features (Social tab): code in `src/social/` (api.js, SocialPage, ProfileEditor, ProfileView,
+  Avatar, constants); friend portfolio view (`FriendPortfolio`) lives in App.jsx to reuse its cards/charts.
+  Database: `supabase/001_social.sql` (already applied) — profiles, connections, blocks, reports,
+  avatars bucket, RLS, and SECURITY DEFINER functions (search_profiles, get_profile,
+  get_shared_portfolio, suggested_profiles, my_network). Other users' data is ONLY read via
+  those functions. `supabase/test_social.sql` is a self-test that always rolls back.
+- Social v2 (`supabase/002_social_feed.sql`, applied; self-test `supabase/test_social_v2.sql` rolls back):
+  activity feed (+ reactions, comments, polls), notifications (DB triggers), network_symbols
+  ("friends who own this"), leaderboard (opt-in, % only), monthly challenge, badges, invite links
+  (`?invite=<code>`, accept_invite), groups (members/shared watchlist/wall).
+  UI: `src/social/{Feed,Notifications,Compete,Groups}.jsx`; stock explanations in `src/ui/explain.js`,
+  shared widgets in `src/ui/components.jsx`, Today/digest/earnings/dividends/performance chart in
+  `src/ui/portfolio.jsx`. Light mode = `html.light` overrides in `src/index.css`.
+- Backups before the v2 redesign: folder `~/Documents/stock-signal-dashboard-backup-2026-10-15`
+  and GitHub branch `backup-2026-10-15`.
