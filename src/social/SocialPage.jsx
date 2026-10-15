@@ -129,7 +129,7 @@ export default function SocialPage({
   // navigation requests from outside (notifications, feed avatars, leaderboard…)
   useEffect(() => {
     if (!route) return;
-    if (route.tab) setTab(route.tab);
+    if (route.tab) setTab(["discover", "requests", "connections"].includes(route.tab) ? "friends" : route.tab);
     if (route.groupId) setGroupRoute(route.groupId);
     if (route.profileId && route.profileId !== uid) {
       setOpenId(route.profileId);
@@ -274,13 +274,11 @@ export default function SocialPage({
 
   const tabs = [
     { id: "feed", label: "Feed" },
-    { id: "discover", label: "Discover" },
-    { id: "requests", label: "Requests", badge: incoming.length },
-    { id: "connections", label: "Friends", count: connections.length },
+    { id: "friends", label: "Friends", badge: incoming.length },
     { id: "groups", label: "Groups" },
     { id: "compete", label: "Compete" },
-    { id: "me", label: "Me" },
   ];
+  const showFriends = tab === "friends";
   const shared = { uid, onOpenStock, onOpenProfile: openProfile, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist };
 
   return (
@@ -315,7 +313,7 @@ export default function SocialPage({
           {connections.length === 0 && (
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
               Your feed fills up with what your connections buy, sell, post and ask.{" "}
-              <button onClick={() => setTab("discover")} className="font-medium text-blue-400 hover:underline">
+              <button onClick={() => setTab("friends")} className="font-medium text-blue-400 hover:underline">
                 Find people →
               </button>
             </div>
@@ -324,11 +322,34 @@ export default function SocialPage({
         </div>
       )}
 
-      {tab === "groups" && <Groups {...shared} openGroupId={groupRoute} />}
+      {tab === "groups" && <Groups key={groupRoute ? `g-${route?.n}` : "groups"} {...shared} openGroupId={groupRoute} onJoinChallenge={() => setTab("compete")} />}
 
       {tab === "compete" && <Compete {...shared} me={me} setMe={(p) => (setMe(p), onProfile?.(p))} />}
 
-      {tab === "discover" && (
+      {showFriends && incoming.length > 0 && <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Requests for you</h3>}
+      {showFriends && incoming.length > 0 && (
+        <div className="mb-5 space-y-2">
+          {incoming.map((p) => (
+            <PersonRow
+              key={p.id}
+              p={p}
+              sub={p.note}
+              onOpen={openProfile}
+              right={
+                <span className="flex shrink-0 gap-1.5">
+                  <button onClick={() => quick(() => acceptRequestFrom(p.id, uid))} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500">
+                    Accept
+                  </button>
+                  <button onClick={() => quick(() => removeConnectionWith(uid, p.id))} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800">
+                    Decline
+                  </button>
+                </span>
+              }
+            />
+          ))}
+        </div>
+      )}
+      {showFriends && (
         <div className="space-y-4">
           <InviteBox me={me} apiKey={apiKey} />
           <div className="relative">
@@ -383,41 +404,8 @@ export default function SocialPage({
         </div>
       )}
 
-      {tab === "requests" && (
-        <div className="space-y-5">
-          <div>
-            <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Received</h3>
-            {incoming.length ? (
-              <div className="space-y-2">
-                {incoming.map((p) => (
-                  <PersonRow
-                    key={p.id}
-                    p={p}
-                    sub={p.note}
-                    onOpen={openProfile}
-                    right={
-                      <span className="flex shrink-0 gap-1.5">
-                        <button
-                          onClick={() => quick(() => acceptRequestFrom(p.id, uid))}
-                          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => quick(() => removeConnectionWith(uid, p.id))}
-                          className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                        >
-                          Decline
-                        </button>
-                      </span>
-                    }
-                  />
-                ))}
-              </div>
-            ) : (
-              <Empty>No new requests.</Empty>
-            )}
-          </div>
+      {showFriends && outgoing.length > 0 && (
+        <div className="mt-6 space-y-5">
           <div>
             <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Sent</h3>
             {outgoing.length ? (
@@ -445,7 +433,8 @@ export default function SocialPage({
         </div>
       )}
 
-      {tab === "connections" && (
+      {showFriends && <h3 className="mb-2 mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Your friends ({connections.length})</h3>}
+      {showFriends && (
         <div className="space-y-3">
           {connections.length > 5 && (
             <input

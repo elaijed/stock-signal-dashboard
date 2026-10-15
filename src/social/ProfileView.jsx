@@ -7,6 +7,7 @@ import { sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, report
 export function badgeList(b) {
   if (!b) return [];
   const out = [];
+  if (b.streak >= 2) out.push(["🔥", `${b.streak}-week streak`, "Active every week in a row"]);
   if (b.member_since && new Date(b.member_since) < new Date("2027-01-01")) out.push(["🌱", "Early member", "Joined in the first months"]);
   if (b.targets >= 5) out.push(["🎯", "Sharpshooter", `Hit ${b.targets} targets`]);
   else if (b.targets >= 1) out.push(["🎯", "On target", "Hit a price target"]);

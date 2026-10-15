@@ -180,3 +180,24 @@ export async function addGroupPost(uid, gid, body) {
 export async function deleteGroupPost(id) {
   check(await supabase.from("group_posts").delete().eq("id", id));
 }
+
+// ---------- practice portfolio, group challenge, sharing, streaks ----------
+export const practiceLeaderboard = async () => check(await supabase.rpc("practice_leaderboard")) || [];
+export const groupChallengeBoard = async (gid, m) => check(await supabase.rpc("group_challenge_board", { gid, m })) || [];
+export async function shareStock(target, sym, note) {
+  check(await supabase.rpc("share_stock", { target, sym, note: note || null }));
+}
+export async function addGroupPostWithSymbol(uid, gid, body, symbol) {
+  check(await supabase.from("group_posts").insert({ group_id: gid, user_id: uid, body: body.trim().slice(0, 500), symbol: symbol || null }));
+}
+export async function markGroupRead(uid, gid) {
+  await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", uid).eq("group_id", gid).is("read_at", null);
+}
+// Subscribe to new / deleted messages in a group (Supabase Realtime). Returns an unsubscribe function.
+export function subscribeGroup(gid, onChange) {
+  const ch = supabase
+    .channel(`group-${gid}-${Math.random().toString(36).slice(2)}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "group_posts", filter: `group_id=eq.${gid}` }, () => onChange())
+    .subscribe();
+  return () => supabase.removeChannel(ch);
+}

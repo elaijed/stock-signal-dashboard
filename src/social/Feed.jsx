@@ -133,7 +133,7 @@ export function FeedItem({ it, uid, onChanged, onOpenStock, onOpenProfile }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
-  if (!it.author) return null;
+  if (!it.author || it.kind === "checkin") return null;
 
   async function react(e) {
     const on = !it.my_reactions.includes(e);

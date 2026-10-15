@@ -21,6 +21,10 @@ function text(n) {
       return `also commented${sym}: “${d.body || ""}”`;
     case "vote":
       return `voted ${d.choice === "bull" ? "🐂 bullish" : "🐻 bearish"} on your poll${sym}`;
+    case "share":
+      return `shared ${d.symbol || "a stock"} with you${d.note ? `: “${d.note}”` : ""}`;
+    case "group_post":
+      return `posted in “${d.name || "your group"}”: “${d.body || ""}”`;
     case "group_add":
       return `added you to the group “${d.name || ""}”`;
     default:

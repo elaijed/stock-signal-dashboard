@@ -1,15 +1,90 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import { timeAgoShort } from "./Feed.jsx";
 import {
   myGroups, groupDetail, createGroup, deleteGroup, addGroupMember, removeGroupMember,
   addGroupSymbol, removeGroupSymbol, addGroupPost, deleteGroupPost, myNetwork,
+  subscribeGroup, markGroupRead, groupChallengeBoard,
 } from "./api.js";
+
+const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+// This month's pick challenge, ranked among the group's members only
+function GroupChallenge({ gid, ensureSymbols, quoteOf, onOpenStock, onJoinChallenge }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    groupChallengeBoard(gid, monthKey()).then(setRows).catch(() => setRows([]));
+  }, [gid]);
+  const key = [...new Set((rows || []).flatMap((r) => r.symbols))].join(",");
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    ensureSymbols(key.split(","), () => alive);
+    return () => {
+      alive = false;
+    };
+  }, [key, ensureSymbols]);
+  const ranked = useMemo(
+    () =>
+      (rows || [])
+        .map((r) => {
+          const rets = r.symbols.map((s, i) => {
+            const px = quoteOf(s)?.quote?.c;
+            return px != null && r.start_prices[i] > 0 ? (px / r.start_prices[i] - 1) * 100 : null;
+          });
+          const v = rets.filter((x) => x != null);
+          return { ...r, ret: v.length ? v.reduce((a, b) => a + b, 0) / v.length : null };
+        })
+        .sort((a, b) => (b.ret ?? -1e9) - (a.ret ?? -1e9)),
+    [rows, quoteOf]
+  );
+  const mine = rows?.some((r) => r.me);
+  const month = new Date().toLocaleDateString("en-US", { month: "long" });
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🏁 {month} group challenge</h3>
+        {!mine && (
+          <button onClick={onJoinChallenge} className="text-xs text-blue-400 hover:underline">
+            Join →
+          </button>
+        )}
+      </div>
+      {!rows ? (
+        <div className="text-xs text-zinc-500">Loading…</div>
+      ) : ranked.length === 0 ? (
+        <div className="text-xs text-zinc-500">No one in the group has picked yet. Pick 3 stocks in Compete and you'll show up here.</div>
+      ) : (
+        <ol className="space-y-1">
+          {ranked.map((r, i) => (
+            <li key={r.user?.id || i} className="flex items-center gap-2 text-sm">
+              <span className="w-5 text-center">{["🥇", "🥈", "🥉"][i] || i + 1}</span>
+              <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size="xs" />
+              <span className="min-w-0 flex-1 truncate text-zinc-300">
+                {r.me ? "You" : r.user?.full_name}
+                <span className="ml-1 text-[11px] text-zinc-500">
+                  {r.symbols.map((s) => (
+                    <button key={s} onClick={() => onOpenStock?.(s)} className="mr-1 hover:text-blue-300">
+                      {s}
+                    </button>
+                  ))}
+                </span>
+              </span>
+              <span className={`text-xs font-semibold tabular-nums ${r.ret == null ? "text-zinc-500" : r.ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {r.ret == null ? "…" : `${r.ret >= 0 ? "+" : "−"}${Math.abs(r.ret).toFixed(2)}%`}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
 
 const input = "rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500";
 const btn = "rounded-md px-3 py-2 text-sm font-medium transition disabled:opacity-40";
 
-function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOpenProfile, onAddToWatchlist, mySymbols }) {
+function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOpenProfile, onAddToWatchlist, mySymbols, onJoinChallenge }) {
   const [g, setG] = useState(undefined);
   const [post, setPost] = useState("");
   const [sym, setSym] = useState("");
@@ -19,11 +94,24 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = useCallback(() => groupDetail(gid).then(setG).catch((e) => (setErr(e.message), setG(null))), [gid]);
+  // live chat: refresh instantly when anyone posts or deletes (plus a slow safety refresh)
   useEffect(() => {
     load();
+    markGroupRead(uid, gid).catch(() => {});
+    const unsub = subscribeGroup(gid, () => {
+      load();
+      markGroupRead(uid, gid).catch(() => {});
+    });
     const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, [load]);
+    return () => {
+      unsub();
+      clearInterval(t);
+    };
+  }, [load, uid, gid]);
+  const chatRef = useRef(null);
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [g?.posts?.length]);
 
   const symKey = (g?.symbols || []).map((s) => s.symbol).join(",");
   useEffect(() => {
@@ -81,15 +169,52 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
       {err && <div className="text-sm text-red-400">{err}</div>}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-        {/* wall */}
-        <section className="space-y-3 md:col-span-3">
-          <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group wall</h3>
-          <div className="flex gap-2">
+        {/* live chat */}
+        <section className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 md:col-span-3">
+          <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">💬 Group chat</h3>
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> live
+            </span>
+          </div>
+          <div ref={chatRef} className="h-[22rem] space-y-2 overflow-y-auto px-3 py-3">
+            {g.posts.length === 0 ? (
+              <div className="py-10 text-center text-sm text-zinc-500">No messages yet — say hi 👋</div>
+            ) : (
+              [...g.posts].reverse().map((p) => (
+                <div key={p.id} className={`flex gap-2 ${p.mine ? "flex-row-reverse" : ""}`}>
+                  {!p.mine && (
+                    <button onClick={() => onOpenProfile?.(p.author?.id)} className="self-end">
+                      <Avatar url={p.author?.avatar_url} name={p.author?.full_name} size="xs" />
+                    </button>
+                  )}
+                  <div className={`group max-w-[80%] rounded-2xl px-3 py-1.5 ${p.mine ? "rounded-br-sm bg-blue-600 text-white" : "rounded-bl-sm bg-zinc-800 text-zinc-200"}`}>
+                    {!p.mine && <div className="text-[11px] font-semibold text-zinc-400">{p.author?.full_name}</div>}
+                    {p.symbol && (
+                      <button onClick={() => onOpenStock?.(p.symbol)} className={`mb-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.mine ? "bg-blue-500 text-white" : "bg-zinc-700 text-blue-300"}`}>
+                        📈 {p.symbol}
+                      </button>
+                    )}
+                    <div className="whitespace-pre-line text-sm">{p.body}</div>
+                    <div className={`text-[10px] ${p.mine ? "text-blue-200" : "text-zinc-500"}`}>
+                      {timeAgoShort(p.created_at)}
+                      {(p.mine || g.is_owner) && (
+                        <button onClick={() => run(() => deleteGroupPost(p.id))} className="ml-2 opacity-60 hover:opacity-100">
+                          delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex gap-2 border-t border-zinc-800 p-2">
             <input
               value={post}
               onChange={(e) => setPost(e.target.value.slice(0, 500))}
               onKeyDown={(e) => e.key === "Enter" && post.trim() && run(() => addGroupPost(uid, gid, post).then(() => setPost("")))}
-              placeholder="Share an idea with the group…"
+              placeholder="Message the group…"
               className={`${input} min-w-0 flex-1`}
             />
             <button
@@ -97,35 +222,13 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
               onClick={() => run(() => addGroupPost(uid, gid, post).then(() => setPost("")))}
               className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}
             >
-              Post
+              Send
             </button>
           </div>
-          {g.posts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-500">No posts yet — start the conversation.</div>
-          ) : (
-            g.posts.map((p) => (
-              <div key={p.id} className="flex gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-3">
-                <button onClick={() => !p.mine && onOpenProfile?.(p.author?.id)}>
-                  <Avatar url={p.author?.avatar_url} name={p.author?.full_name} size="sm" />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs">
-                    <span className="font-semibold text-zinc-200">{p.mine ? "You" : p.author?.full_name}</span>
-                    <span className="ml-1.5 text-zinc-600">{timeAgoShort(p.created_at)}</span>
-                    {(p.mine || g.is_owner) && (
-                      <button onClick={() => run(() => deleteGroupPost(p.id))} className="ml-2 text-zinc-600 hover:text-red-300">
-                        delete
-                      </button>
-                    )}
-                  </div>
-                  <div className="whitespace-pre-line text-sm text-zinc-300">{p.body}</div>
-                </div>
-              </div>
-            ))
-          )}
         </section>
 
         <div className="space-y-4 md:col-span-2">
+          <GroupChallenge gid={gid} ensureSymbols={ensureSymbols} quoteOf={quoteOf} onOpenStock={onOpenStock} onJoinChallenge={onJoinChallenge} />
           {/* shared watchlist */}
           <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
             <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Shared watchlist</h3>

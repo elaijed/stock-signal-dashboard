@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Avatar from "./Avatar.jsx";
-import { leaderboard, challengeBoard, enterChallenge, postActivity, updateMyProfile } from "./api.js";
+import { leaderboard, challengeBoard, enterChallenge, postActivity, updateMyProfile, practiceLeaderboard } from "./api.js";
 
 const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const monthName = (d = new Date()) => d.toLocaleDateString("en-US", { month: "long" });
@@ -219,10 +219,53 @@ function Challenge({ uid, ensureSymbols, quoteOf, getQuote, onOpenStock, onOpenP
   );
 }
 
+// Practice ($10,000 pretend money) leaderboard — everyone starts equal
+function PracticeBoard({ me, ensureSymbols, quoteOf, onOpenProfile }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    practiceLeaderboard().then(setRows).catch(() => setRows([]));
+  }, []);
+  const syms = (rows || []).flatMap((r) => (r.paper?.positions || []).map((p) => p.symbol));
+  const price = useLivePrices(syms, ensureSymbols, quoteOf);
+  const ranked = (rows || [])
+    .map((r) => {
+      const p = r.paper || {};
+      let v = p.cash ?? 10000;
+      for (const pos of p.positions || []) v += pos.qty * (price(pos.symbol) ?? pos.avgPrice);
+      return { ...r, ret: (v / 10000 - 1) * 100 };
+    })
+    .sort((a, b) => b.ret - a.ret);
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+      <h3 className="mb-1 text-base font-semibold text-zinc-100">🎮 Practice leaderboard</h3>
+      <p className="mb-3 text-xs text-zinc-500">Everyone starts with $10,000 of pretend money, so it's a fair race. Friends appear if they joined the leaderboard.</p>
+      {!rows ? (
+        <div className="text-sm text-zinc-500">Loading…</div>
+      ) : ranked.length === 0 ? (
+        <div className="text-sm text-zinc-500">No practice portfolios yet — start one in My Stocks → 🎮 Practice.</div>
+      ) : (
+        <ol className="space-y-1.5">
+          {ranked.map((r, i) => (
+            <li key={r.user?.id || i} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${r.me ? "bg-blue-950/30" : "bg-zinc-800/40"}`}>
+              <span className="w-6 text-center text-sm">{MEDAL[i] || <span className="text-zinc-500">{i + 1}</span>}</span>
+              <button onClick={() => !r.me && onOpenProfile?.(r.user.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size="xs" />
+                <span className="truncate text-sm text-zinc-200">{r.me ? "You" : r.user?.full_name}</span>
+              </button>
+              <span className={`w-20 text-right text-sm font-semibold tabular-nums ${tone(r.ret)}`}>{pctStr(r.ret)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 export default function Compete(props) {
   return (
     <div className="space-y-4">
       <Challenge {...props} />
+      <PracticeBoard {...props} />
       <Leaderboard {...props} />
     </div>
   );
