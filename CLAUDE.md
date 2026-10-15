@@ -32,3 +32,8 @@ and don't ask them to run commands unless there is no other way.
   `src/ui/portfolio.jsx`. Light mode = `html.light` overrides in `src/index.css`.
 - Backups before the v2 redesign: folder `~/Documents/stock-signal-dashboard-backup-2026-10-15`
   and GitHub branch `backup-2026-10-15`.
+- v3 (Oct 15): Home page (`src/ui/home.jsx`: snapshot, first-week checklist, weekly recap, Learn,
+  GlossaryPage), practice trading (`src/ui/practice.jsx`, stored as `paper` in the account doc),
+  share-a-stock modal (`src/ui/share.jsx`), group chat (realtime on group_posts) + group challenge.
+  DB: `supabase/003_group_notifications.sql`, `supabase/004_beginners_streaks_chat.sql` (applied).
+  Weekly streak = weeks with any activity; the app posts a hidden 'checkin' activity once per week.
