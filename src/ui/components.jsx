@@ -74,7 +74,13 @@ export function WhyPanel({ ex, compact = false }) {
   return (
     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpen((o) => !o);
+          try {
+            localStorage.setItem("ssd_did_why", "1");
+            window.dispatchEvent(new Event("ssd-did-why"));
+          } catch (_) {}
+        }}
         className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400 hover:text-zinc-200"
       >
         <span>Why? {!open && <span className="ml-1 font-normal normal-case tracking-normal text-zinc-500">— {ex.bottom}</span>}</span>
