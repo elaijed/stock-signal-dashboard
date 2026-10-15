@@ -15,7 +15,15 @@ import {
 } from "recharts";
 import { supabase } from "./supabase.js";
 import SocialPage from "./social/SocialPage.jsx";
-import { myNetwork, getSharedPortfolio } from "./social/api.js";
+import {
+  myNetwork, getSharedPortfolio, loadMyProfile, postActivity, networkSymbols, myNotifications, acceptInvite,
+} from "./social/api.js";
+import Avatar from "./social/Avatar.jsx";
+import Feed from "./social/Feed.jsx";
+import NotificationsBell from "./social/Notifications.jsx";
+import { explainStock, levelsExplained, positionSentence, backtestSentence, pickReason } from "./ui/explain.js";
+import { Info, VerdictBar, WhyPanel, Collapsible, FriendsStack, Toast } from "./ui/components.jsx";
+import { PerformanceChart, TodayStrip, useDigest, DigestCard, EarningsList, DividendsCard, Welcome } from "./ui/portfolio.jsx";
 
 /*
  * Stock Signal Dashboard — single-file React artifact.
@@ -105,11 +113,12 @@ const DEFAULT_API_KEY = import.meta.env.VITE_FINNHUB_KEY || "";
 //   { v: 1, watchlist: [...], alerts: [...], transactions: [...] }
 // A bare array (the column's '[]' default) is read as an empty account.
 function parseAccountDoc(raw) {
-  if (Array.isArray(raw)) return { watchlist: raw, alerts: [], transactions: [] };
+  if (Array.isArray(raw)) return { watchlist: raw, alerts: [], transactions: [], events: [] };
   return {
     watchlist: Array.isArray(raw?.watchlist) ? raw.watchlist : [],
     alerts: Array.isArray(raw?.alerts) ? raw.alerts : [],
     transactions: Array.isArray(raw?.transactions) ? raw.transactions : [],
+    events: Array.isArray(raw?.events) ? raw.events : [],
   };
 }
 
@@ -123,7 +132,7 @@ async function loadAccount(userId) {
 async function saveAccount(userId, doc) {
   const { error } = await supabase.from("portfolios").upsert({
     user_id: userId,
-    watchlist: { v: 1, watchlist: doc.watchlist, alerts: doc.alerts, transactions: doc.transactions },
+    watchlist: { v: 1, watchlist: doc.watchlist, alerts: doc.alerts, transactions: doc.transactions, events: doc.events || [] },
     updated_at: new Date().toISOString(),
   });
   if (error) throw error;
@@ -262,7 +271,15 @@ function computeMACD(closes, fast = 12, slow = 26, sig = 9) {
   const signal = sigSeries[sigSeries.length - 1];
   const macd = macdLine[macdLine.length - 1];
   const hist = macd - signal;
-  return { macd, signal, hist, bull: hist > 0 };
+  // sessions since the MACD line last crossed its signal line (null if no cross in view)
+  let crossAgo = null;
+  for (let i = macdLine.length - 2, k = 1; i >= 0 && sigSeries[i] != null; i--, k++) {
+    if ((macdLine[i] - sigSeries[i] > 0) !== hist > 0) {
+      crossAgo = k - 1;
+      break;
+    }
+  }
+  return { macd, signal, hist, bull: hist > 0, crossAgo };
 }
 
 function stdev(arr) {
@@ -459,6 +476,8 @@ function analyze(candles, quote, item) {
     sma20, sma50, rsi14, spreadPct, price, hi, lo, pctFromHigh, dayVol, stopPct,
     volRatio, support, resistance, stop, target, risk, reward, rr,
     action, conviction, rationale, factors, gainPct, gainUsd, bearish,
+    uptrend, downtrend, strongUp, strongDown, overbought, oversold, rsiRising, rsiFalling, extended,
+    votes: { ma: maVote, rsi: rsiVote, macd: macdVote },
   };
 }
 
@@ -1046,7 +1065,7 @@ function ChartTooltip({ active, payload }) {
 // plus a separate volume strip underneath (its own chart, so no dual axis).
 // SMAs are computed on the full fetched history, then windowed, so a 1M view
 // still shows a correct 50-day average.
-function MiniChart({ candles, symbol }) {
+function MiniChart({ candles, symbol, tall = false }) {
   const [tf, setTf] = useState("6M");
   const series = useMemo(() => {
     const closes = candles.map((c) => c.close);
@@ -1093,7 +1112,7 @@ function MiniChart({ candles, symbol }) {
           ))}
         </div>
       </div>
-      <div className="h-32 w-full">
+      <div className={`${tall ? "h-64" : "h-32"} w-full`}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={view} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
             <defs>
@@ -1479,46 +1498,115 @@ function NewsSection({ info }) {
   );
 }
 
-function StockCard({ item, data, info, alerts, onSetAlert, onDeleteAlert, onBuy, onRemove }) {
+// Price + today's move; briefly flashes green/red when a new quote arrives
+function PriceLine({ quote, big = false }) {
+  const prev = useRef(quote?.c);
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    if (quote?.c == null) return;
+    if (prev.current != null && quote.c !== prev.current) {
+      setFlash(quote.c > prev.current ? "flash-up" : "flash-down");
+      const t = setTimeout(() => setFlash(""), 1200);
+      prev.current = quote.c;
+      return () => clearTimeout(t);
+    }
+    prev.current = quote.c;
+  }, [quote?.c]);
+  if (!quote) return <div className="mb-2 h-8 w-40 animate-pulse rounded bg-zinc-800" />;
+  const up = quote.dp >= 0;
+  return (
+    <div className="flex items-baseline gap-3">
+      <span className={`${big ? "text-3xl" : "text-2xl"} rounded px-1 -mx-1 font-semibold tabular-nums text-zinc-50 ${flash}`}>${fmt(quote.c)}</span>
+      <span className={`text-sm font-medium tabular-nums ${up ? "text-emerald-400" : "text-red-400"}`}>
+        {up ? "▲" : "▼"} {fmt(Math.abs(quote.d))} ({fmt(Math.abs(quote.dp))}%) today
+      </span>
+    </div>
+  );
+}
+
+// Support / resistance / stop / target, each explained in a sentence
+function LevelsExplained({ a }) {
+  const rows = levelsExplained(a);
+  if (!rows.length) return null;
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => (
+        <div key={r.label} className="rounded-md bg-zinc-800/40 px-3 py-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-medium text-zinc-400">
+              {r.label}
+              <Info term={r.info} />
+            </span>
+            <span className={`text-sm font-semibold tabular-nums ${r.tone === "bad" ? "text-red-300" : r.tone === "good" ? "text-emerald-300" : "text-zinc-100"}`}>
+              {r.value}
+            </span>
+          </div>
+          <div className="text-[11px] text-zinc-500">{r.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalystSentence({ info }) {
+  const r = info?.rec;
+  if (!r) return null;
+  const buy = (r.strongBuy || 0) + (r.buy || 0);
+  const hold = r.hold || 0;
+  const sell = (r.sell || 0) + (r.strongSell || 0);
+  const total = buy + hold + sell;
+  if (!total) return null;
+  const lean = buy / total >= 0.6 ? "Most analysts say buy." : sell / total >= 0.4 ? "Many analysts are negative." : "Analysts are mixed.";
+  return (
+    <p className="mt-1 text-xs text-zinc-400">
+      {total} analysts: {buy} Buy, {hold} Hold, {sell} Sell ({monthYear(r.period)}). {lean}
+    </p>
+  );
+}
+
+function BacktestBlurb({ candles }) {
+  const bt = useMemo(() => (candles ? runBacktest(candles) : null), [candles]);
+  const s = backtestSentence(bt);
+  if (!s) return null;
+  return (
+    <p className="mt-2 text-xs text-zinc-400">
+      {s}
+      <Info term="backtest" />
+    </p>
+  );
+}
+
+function StockCard({ item, data, info, alerts, onSetAlert, onDeleteAlert, onBuy, onRemove, friends, onOpen }) {
   const quote = data?.quote;
   const candles = data?.candles;
   const a = candles ? analyze(candles, quote, item) : null;
-  const dayUp = quote && quote.dp >= 0;
-  const owned = item.status === "owned";
+  const ex = explainStock(a);
 
   return (
-    <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 p-4 shadow-md">
+    <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-md transition hover:border-zinc-700">
       {/* header */}
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
+      <div className="mb-1 flex items-start justify-between gap-2">
+        <button onClick={() => onOpen(item.symbol)} className="min-w-0 text-left">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-wide text-zinc-100">{item.symbol}</h2>
-            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
-              Watching
-            </span>
+            <h2 className="text-lg font-bold tracking-wide text-zinc-100 hover:text-blue-300">{item.symbol}</h2>
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">Watching</span>
           </div>
           <CompanyMeta info={info} />
-        </div>
+        </button>
         <EarningsFlag info={info} />
       </div>
+      {ex?.summary && <p className="mb-2 text-sm text-zinc-300">{ex.summary}</p>}
 
-      {/* quote */}
       {data?.quoteError ? (
         <div className="mb-3 rounded-md border border-amber-800/60 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
           {ERROR_TEXT[data.quoteError] || ERROR_TEXT.other}
         </div>
-      ) : quote ? (
-        <div className="mb-2 flex items-baseline gap-3">
-          <span className="text-2xl font-semibold tabular-nums text-zinc-50">${fmt(quote.c)}</span>
-          <span className={`text-sm font-medium tabular-nums ${dayUp ? "text-emerald-400" : "text-red-400"}`}>
-            {dayUp ? "▲" : "▼"} {fmt(Math.abs(quote.d))} ({fmt(Math.abs(quote.dp))}%) today
-          </span>
-        </div>
       ) : (
-        <div className="mb-2 h-8 w-40 animate-pulse rounded bg-zinc-800" />
+        <div className="mb-2">
+          <PriceLine quote={quote} />
+        </div>
       )}
 
-      {/* chart */}
       {data?.candleError ? (
         <div className="mb-3 rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400">
           {ERROR_TEXT[data.candleError] || ERROR_TEXT.other}
@@ -1529,99 +1617,557 @@ function StockCard({ item, data, info, alerts, onSetAlert, onDeleteAlert, onBuy,
         <div className="mb-1 h-28 w-full animate-pulse rounded bg-zinc-800" />
       )}
 
-      {/* price alerts */}
+      <FriendsStack owners={friends?.owners || []} watchers={friends?.watchers || []} onOpen={() => onOpen(item.symbol)} />
+      <VerdictBar ex={ex} />
+      <WhyPanel ex={ex} />
+
       <AlertChips symbol={item.symbol} alerts={alerts} price={quote?.c} onAdd={onSetAlert} onDelete={onDeleteAlert} />
 
-      {/* signal chip + factor chips */}
       {a && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${signalChipStyle(a.signal, a.signalStrong)}`}>
-            {a.signalLabel}
-          </span>
-          {a.signalMixed && <span className="text-[10px] italic text-amber-400/80">(mixed signals)</span>}
-          {a.factors.map((f, i) => (
-            <span key={i} className="rounded-full bg-zinc-800/70 px-2 py-1 text-zinc-400">
-              {f}
-            </span>
-          ))}
-        </div>
+        <Collapsible id={`more-${item.symbol}`} title="More details">
+          <LevelsExplained a={a} />
+          <FiftyTwoWeek info={info} price={quote?.c} />
+          <AnalystRatings info={info} />
+          <AnalystSentence info={info} />
+          <BacktestBlurb candles={candles} />
+          {candles && <BacktestSection candles={candles} />}
+          <NewsSection info={info} />
+        </Collapsible>
       )}
 
-      {/* real 52-week range + dividend yield */}
-      <FiftyTwoWeek info={info} price={quote?.c} />
-
-      {/* P/L for owned */}
-      {owned && a?.gainPct != null && (
-        <div className="mt-3 rounded-lg bg-zinc-800/60 px-3 py-2 text-sm">
-          <span className="text-zinc-400">Unrealized: </span>
-          <span className={`font-semibold tabular-nums ${a.gainUsd >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {a.gainUsd >= 0 ? "+" : "−"}${fmt(Math.abs(a.gainUsd))} ({a.gainPct >= 0 ? "+" : ""}
-            {fmt(a.gainPct)}%)
-          </span>
-        </div>
-      )}
-
-      {/* recommendation + rationale */}
-      {a && (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">Recommendation</span>
-            <span className={`rounded-md px-2.5 py-1 text-sm font-semibold ${actionStyle(a.action)}`}>{a.action}</span>
-            <span className={`text-xs font-medium ${CONVICTION_STYLE[a.conviction]}`}>{a.conviction} conviction</span>
-          </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">{a.rationale}</p>
-        </div>
-      )}
-
-      {/* analyst ratings (real latest-period consensus) */}
-      <AnalystRatings info={info} />
-
-      {/* precise trade parameters — buy-oriented for bullish/hold, exit-oriented for bearish */}
-      {a && (
-        <div className="mt-3 grid grid-cols-3 gap-1.5">
-          <Level label="Support" value={`$${fmt(a.support)}`} />
-          <Level label="Resistance" value={`$${fmt(a.resistance)}`} />
-          {a.bearish ? (
-            <>
-              <Level label={owned ? "Exit below" : "Weak below"} value={`$${fmt(a.support)}`} tone="text-red-300" />
-              <Level label="6-mo low" value={`$${fmt(a.lo)}`} tone="text-red-300" />
-              <Level label="Trend gap" value={`${a.spreadPct.toFixed(1)}%`} tone="text-red-300" />
-              <Level label="RSI" value={a.rsi14.toFixed(0)} />
-            </>
-          ) : (
-            <>
-              <Level label={owned ? "Protect stop" : "Stop-loss"} value={`$${fmt(a.stop)}`} tone="text-red-300" />
-              <Level label="Target" value={`$${fmt(a.target)}`} tone="text-emerald-300" />
-              <Level label="Reward:Risk" value={a.rr ? `${a.rr.toFixed(1)} : 1` : "—"} />
-              <Level label="Stop is" value={`−${a.stopPct.toFixed(0)}%`} tone="text-zinc-400" />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* backtest (collapsible) */}
-      {candles && <BacktestSection candles={candles} />}
-
-      {/* recent news (collapsible) */}
-      <NewsSection info={info} />
-
-      {/* actions */}
       <div className="mt-4 flex gap-2 border-t border-zinc-800 pt-3">
         <button
           onClick={() => onBuy(item.symbol, quote?.c)}
           disabled={!quote}
-          className="flex-1 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-40"
+          className="flex-1 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-40"
         >
           Buy
         </button>
         <button
+          onClick={() => onOpen(item.symbol)}
+          className="rounded-lg border border-zinc-700 px-3 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-blue-600 hover:text-blue-300"
+        >
+          Details
+        </button>
+        <button
           onClick={() => onRemove(item.symbol)}
-          className="rounded-md border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-400 transition hover:border-red-700 hover:text-red-300"
+          className="rounded-lg border border-zinc-700 px-3 py-2.5 text-sm font-medium text-zinc-400 transition hover:border-red-700 hover:text-red-300"
         >
           Remove
         </button>
       </div>
     </div>
+  );
+}
+
+function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, friends, onOpen }) {
+  const { item, data, a, price, risk, gain: gainUsd, gainPct } = stat;
+  const quote = data?.quote;
+  const candles = data?.candles;
+  const ex = explainStock(a, { owned: true, risk });
+  const pos = positionSentence(item, price);
+  const profit = gainUsd != null && gainUsd >= 0;
+
+  return (
+    <div
+      className={`flex flex-col rounded-2xl border bg-zinc-900 p-4 shadow-md ${
+        risk?.breachedStop ? "border-red-700/70" : risk?.hitTarget ? "border-emerald-700/70" : "border-zinc-800"
+      }`}
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <button onClick={() => onOpen(item.symbol)} className="min-w-0 text-left">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold tracking-wide text-zinc-100 hover:text-blue-300">{item.symbol}</h2>
+            <span className="rounded-full bg-blue-900/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-blue-300">Owned</span>
+            {risk?.breachedStop && (
+              <span className="rounded-full border border-red-500 bg-red-800/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-100">
+                ⚠ Below your safety line
+              </span>
+            )}
+            {risk && !risk.breachedStop && risk.hitTarget && (
+              <span className="rounded-full border border-emerald-500 bg-emerald-800/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-100">
+                ✓ Target reached
+              </span>
+            )}
+          </div>
+          <CompanyMeta info={info} />
+        </button>
+        <EarningsFlag info={info} />
+      </div>
+      {ex?.summary && <p className="mb-2 text-sm text-zinc-300">{ex.summary}</p>}
+      <PriceLine quote={quote} />
+
+      {/* the position in plain words */}
+      <div className="mt-3 rounded-xl bg-zinc-800/50 px-3 py-2.5 text-sm text-zinc-300">
+        <div>{pos.bought}</div>
+        {pos.now && (
+          <div className="mt-0.5">
+            {pos.now},{" "}
+            <span className={`font-semibold ${profit ? "text-emerald-400" : "text-red-400"}`}>
+              {profit ? "+" : "−"}${fmt(Math.abs(gainUsd))} ({gainPct >= 0 ? "+" : ""}
+              {fmt(gainPct)}%)
+            </span>
+            .
+          </div>
+        )}
+        {risk && (
+          <div className="mt-1 text-xs text-zinc-400">
+            Safety line (stop-loss)<Info term="stop" />: <span className="font-semibold text-red-300">${fmt(risk.stop)}</span>
+            {risk.distToStopPct > 0 && <> — {risk.distToStopPct.toFixed(1)}% below today</>}
+            {" · "}Target<Info term="target" />: <span className="font-semibold text-emerald-300">${fmt(risk.target)}</span>
+            {risk.trailing && (
+              <>
+                {" · "}Consider raising your safety line to <span className="font-semibold text-amber-300">${fmt(risk.trailing)}</span> to lock in gains.
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3">
+        {data?.candleError ? (
+          <div className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400">
+            {ERROR_TEXT[data.candleError] || ERROR_TEXT.other}
+          </div>
+        ) : candles ? (
+          <MiniChart candles={candles} symbol={item.symbol} />
+        ) : (
+          <div className="h-28 w-full animate-pulse rounded bg-zinc-800" />
+        )}
+      </div>
+
+      <FriendsStack owners={friends?.owners || []} watchers={friends?.watchers || []} onOpen={() => onOpen(item.symbol)} />
+      <VerdictBar ex={ex} />
+      <WhyPanel ex={ex} />
+
+      <AlertChips symbol={item.symbol} alerts={alerts} price={price} onAdd={onSetAlert} onDelete={onDeleteAlert} />
+
+      <Collapsible id={`more-owned-${item.symbol}`} title="More details">
+        <div className="grid grid-cols-3 gap-1.5">
+          <Level label="Buy price" value={`$${fmt(item.buyPrice)}`} />
+          <Level label="Shares" value={`${item.qty}`} />
+          <Level label="Cost" value={`$${fmt(item.buyPrice * item.qty)}`} />
+        </div>
+        {risk && (
+          <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+            Safety line = the higher of 8% below your buy price (${fmt(risk.stopByPct)})
+            {risk.stopBySupport != null ? ` or 2% below the 50-day average ($${fmt(risk.stopBySupport)})` : ""}. Target = 16% above your buy price,
+            twice the 8% you risked.
+          </p>
+        )}
+        {a && (
+          <div className="mt-3">
+            <LevelsExplained a={a} />
+          </div>
+        )}
+        <FiftyTwoWeek info={info} price={price} />
+        <AnalystRatings info={info} />
+        <AnalystSentence info={info} />
+        <NewsSection info={info} />
+        <p className="mt-3 text-[10px] leading-relaxed text-zinc-600">
+          Safety lines and targets are mechanical calculations for education only — not financial advice.
+        </p>
+      </Collapsible>
+
+      <div className="mt-4 flex gap-2 border-t border-zinc-800 pt-3">
+        <button
+          onClick={() => onSell(item.symbol)}
+          className="flex-1 rounded-lg bg-red-800/80 px-3 py-2.5 text-sm font-semibold text-red-100 transition hover:bg-red-700"
+        >
+          Sell position
+        </button>
+        <button
+          onClick={() => onOpen(item.symbol)}
+          className="rounded-lg border border-zinc-700 px-3 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-blue-600 hover:text-blue-300"
+        >
+          Details
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Full-screen stock page: big chart, the reasoning, what-if, friends, polls, news
+function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile }) {
+  const quote = data?.quote;
+  const candles = data?.candles;
+  const a = candles ? analyze(candles, quote, item || { symbol, status: "watching" }) : null;
+  const owned = item?.status === "owned";
+  const risk = owned && a && quote ? ownedRisk(item, a, quote.c) : null;
+  const ex = explainStock(a, { owned, risk });
+  const [amount, setAmount] = useState("1000");
+  const amt = parseFloat(amount) || 0;
+  const price = quote?.c ?? (candles?.length ? candles[candles.length - 1].close : null);
+  // what-if is about a NEW purchase today, so it uses today's levels (not your old position's)
+  const target = a?.target;
+  const stop = a?.stop;
+  const shares = price ? amt / price : 0;
+  const m = info?.metric;
+  const pe = m?.peTTM ?? m?.peBasicExclExtraTTM;
+  const cap = info?.profile?.marketCapitalization;
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-zinc-950/95 backdrop-blur-sm">
+      <div className="mx-auto max-w-4xl px-4 pb-24 pt-4">
+        <div className="sticky top-0 z-10 -mx-4 mb-3 flex items-center justify-between gap-2 bg-zinc-950/95 px-4 py-2">
+          <button onClick={onClose} className="rounded-lg border border-zinc-800 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900">
+            ← Back
+          </button>
+          <div className="flex gap-2">
+            {!inList ? (
+              <button onClick={() => onAdd(symbol)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
+                + Watchlist
+              </button>
+            ) : (
+              <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-sm text-zinc-400">✓ {owned ? "You own this" : "On your watchlist"}</span>
+            )}
+            {!owned && (
+              <button
+                onClick={() => onBuy(symbol, quote?.c)}
+                disabled={!quote}
+                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-40"
+              >
+                Buy
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-1 flex items-center gap-3">
+          {info?.profile?.logo && <img src={info.profile.logo} alt="" className="h-10 w-10 rounded-lg bg-white object-contain p-1" />}
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-50">{symbol}</h1>
+            <div className="text-sm text-zinc-400">
+              {info?.profile?.name || ""}
+              {info?.profile?.finnhubIndustry ? ` · ${info.profile.finnhubIndustry}` : ""}
+            </div>
+          </div>
+          <div className="ml-auto">
+            <EarningsFlag info={info} />
+          </div>
+        </div>
+        {ex?.summary && <p className="mb-2 text-base text-zinc-300">{ex.summary}</p>}
+        {data?.quoteError ? (
+          <div className="mb-3 rounded-md border border-amber-800/60 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
+            {ERROR_TEXT[data.quoteError] || ERROR_TEXT.other}
+          </div>
+        ) : (
+          <PriceLine quote={quote} big />
+        )}
+
+        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
+          {data?.candleError ? (
+            <div className="px-3 py-6 text-center text-sm text-zinc-500">{ERROR_TEXT[data.candleError] || ERROR_TEXT.other}</div>
+          ) : candles ? (
+            <MiniChart candles={candles} symbol={`d-${symbol}`} tall />
+          ) : (
+            <div className="h-64 w-full animate-pulse rounded bg-zinc-800" />
+          )}
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-5">
+          <div className="md:col-span-3">
+            <VerdictBar ex={ex} />
+            <WhyPanel ex={ex} />
+            {a && (
+              <div className="mt-4">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Key price levels</div>
+                <LevelsExplained a={a} />
+              </div>
+            )}
+            <BacktestBlurb candles={candles} />
+            {candles && <BacktestSection candles={candles} />}
+            <NewsSection info={info} />
+          </div>
+
+          <div className="space-y-4 md:col-span-2">
+            {/* what-if */}
+            {price != null && target != null && stop != null && (
+              <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">What if I invest…</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-400">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+                {amt > 0 && (
+                  <div className="mt-3 space-y-1.5 text-sm">
+                    <div className="text-zinc-400">
+                      That buys about <span className="font-semibold text-zinc-200">{shares.toFixed(shares < 10 ? 2 : 0)} shares</span> at ${fmt(price)}.
+                    </div>
+                    <div className="text-zinc-300">
+                      🎯 If it reaches the target (${fmt(target)}):{" "}
+                      <span className="font-semibold text-emerald-400">+${fmt(shares * (target - price))}</span>
+                    </div>
+                    <div className="text-zinc-300">
+                      🛑 If it falls to the safety line (${fmt(stop)}):{" "}
+                      <span className="font-semibold text-red-400">−${fmt(Math.abs(shares * (price - stop)))}</span>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* key stats */}
+            <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Key stats</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {cap != null && <Level label="Market cap" value={cap >= 1e6 ? `$${(cap / 1e6).toFixed(2)}T` : cap >= 1e3 ? `$${(cap / 1e3).toFixed(1)}B` : `$${cap.toFixed(0)}M`} />}
+                {pe != null && <Level label="P/E" value={pe.toFixed(1)} />}
+                {m?.["52WeekHigh"] != null && <Level label="52-wk high" value={`$${fmt(m["52WeekHigh"])}`} />}
+                {m?.["52WeekLow"] != null && <Level label="52-wk low" value={`$${fmt(m["52WeekLow"])}`} />}
+                {a && <Level label="RSI" value={a.rsi14.toFixed(0)} />}
+                {a && <Level label="Daily move" value={`±${a.dayVol.toFixed(1)}%`} />}
+              </div>
+              <AnalystRatings info={info} />
+              <AnalystSentence info={info} />
+            </section>
+
+            {/* friends */}
+            {(friends?.owners?.length > 0 || friends?.watchers?.length > 0) && (
+              <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Friends with {symbol}</div>
+                <ul className="space-y-1.5">
+                  {[...(friends.owners || []).map((u) => [u, "owns"]), ...(friends.watchers || []).map((u) => [u, "watching"])].map(([u, k]) => (
+                    <li key={`${u.id}-${k}`}>
+                      <button onClick={() => onOpenProfile(u.id)} className="flex w-full items-center gap-2 text-left text-sm text-zinc-300 hover:text-zinc-100">
+                        <Avatar url={u.avatar_url} name={u.full_name} size="xs" />
+                        {u.full_name}
+                        <span className={`ml-auto text-xs ${k === "owns" ? "text-blue-300" : "text-zinc-500"}`}>{k}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {owned && (
+              <AlertChips symbol={symbol} alerts={alerts} price={price} onAdd={onSetAlert} onDelete={onDeleteAlert} />
+            )}
+          </div>
+        </div>
+
+        {/* friends' polls and notes about this stock */}
+        <section className="mt-6">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">What your friends think about {symbol}</div>
+          <Feed uid={uid} symbol={symbol} limit={10} onOpenStock={() => {}} onOpenProfile={onOpenProfile}
+            emptyText={`No posts about ${symbol} yet. Ask your friends what they think with a poll above.`} />
+        </section>
+        <p className="mt-6 text-center text-[11px] text-zinc-600">Educational tool only, not financial advice.</p>
+      </div>
+    </div>
+  );
+}
+
+// Header search: type a company name or ticker
+function StockSearch({ apiKey, onOpen }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const close = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, []);
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 1 || !apiKey) {
+      setResults([]);
+      return;
+    }
+    setBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(term)}&exchange=US&token=${encodeURIComponent(apiKey)}`);
+        const j = await res.json();
+        const list = (j.result || [])
+          .filter((r) => /Common Stock|ETP|ADR/i.test(r.type || "") && /^[A-Z.\-]{1,6}$/.test(r.symbol))
+          .slice(0, 8);
+        setResults(list);
+      } catch (_) {
+        setResults([]);
+      } finally {
+        setBusy(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, apiKey]);
+  function pick(sym) {
+    setQ("");
+    setOpen(false);
+    onOpen(sym);
+  }
+  return (
+    <div ref={ref} className="relative w-full sm:w-72">
+      <span className="pointer-events-none absolute left-3 top-2.5 text-sm text-zinc-500">🔍</span>
+      <input
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            if (results[0]) pick(results[0].symbol);
+            else if (/^[A-Za-z.\-]{1,6}$/.test(q.trim())) pick(q.trim().toUpperCase());
+          }
+        }}
+        placeholder={apiKey ? "Search stocks (e.g. apple, NVDA)" : "Add a data key to search"}
+        disabled={!apiKey}
+        className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-zinc-100 outline-none focus:border-blue-500 disabled:opacity-50"
+      />
+      {open && q.trim() && (
+        <div className="absolute left-0 right-0 top-11 z-50 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+          {busy && !results.length ? (
+            <div className="px-4 py-3 text-sm text-zinc-500">Searching…</div>
+          ) : results.length ? (
+            results.map((r) => (
+              <button key={r.symbol} onClick={() => pick(r.symbol)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-800">
+                <span className="w-16 font-semibold text-zinc-100">{r.symbol}</span>
+                <span className="truncate text-sm text-zinc-400">{r.description}</span>
+              </button>
+            ))
+          ) : (
+            <div className="px-4 py-3 text-sm text-zinc-500">No US stocks found for “{q.trim()}”.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SellModal({ open, symbol, price, onConfirm, onClose }) {
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (open) setNote("");
+  }, [open, symbol]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-lg font-semibold text-zinc-100">Sell {symbol}?</h2>
+        <p className="mb-3 text-sm text-zinc-400">
+          This closes the full position{price != null ? ` at about $${fmt(price)}` : ""}, records the profit or loss in your trade history, and removes it
+          from Owned.
+        </p>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">Why are you selling? (optional)</label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value.slice(0, 280))}
+          rows={2}
+          placeholder="e.g. Hit my target, taking profit"
+          className="mb-1 w-full resize-none rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
+        />
+        <div className="mb-4 text-[11px] text-zinc-500">Shared with your connections in their feed (if your activity sharing is on).</div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800">
+            Cancel
+          </button>
+          <button onClick={() => onConfirm(note)} className="rounded-md bg-red-800 px-4 py-1.5 text-sm font-semibold text-red-100 hover:bg-red-700">
+            Sell position
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// avatar menu in the header
+function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onWelcome, onLogout, saveStatus }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+  const item = "flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-zinc-300 hover:bg-zinc-800";
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} className="relative block rounded-full" title="Menu">
+        <Avatar url={profile?.avatar_url} name={profile?.full_name || email} size="sm" />
+        <span
+          className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-950 ${
+            saveStatus === "error" ? "bg-red-500" : saveStatus === "saving" ? "bg-zinc-500" : "bg-emerald-500"
+          }`}
+          title={saveStatus === "error" ? "Not saved — check connection" : saveStatus === "saving" ? "Saving…" : "Saved to your account"}
+        />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-12 z-50 w-64 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl">
+          <div className="border-b border-zinc-800 px-4 py-3">
+            <div className="truncate text-sm font-semibold text-zinc-100">{profile?.full_name || "Your account"}</div>
+            <div className="truncate text-xs text-zinc-500">{email}</div>
+            <div className={`mt-1 text-[11px] ${saveStatus === "error" ? "text-red-400" : "text-emerald-500/80"}`}>
+              {saveStatus === "error" ? "⚠ Not saved — check connection" : saveStatus === "saving" ? "Saving…" : "✓ Saved to your account"}
+            </div>
+          </div>
+          <button className={item} onClick={() => (setOpen(false), onProfile())}>
+            👤 My profile
+          </button>
+          <button className={item} onClick={() => onTheme(theme === "light" ? "dark" : "light")}>
+            {theme === "light" ? "🌙 Dark mode" : "☀️ Light mode"}
+          </button>
+          <button className={item} onClick={() => (setOpen(false), onSettings())}>
+            ⚙️ Settings (data key)
+          </button>
+          <button className={item} onClick={() => (setOpen(false), onWelcome())}>
+            💡 Show welcome tips
+          </button>
+          <button className={`${item} border-t border-zinc-800 text-red-300`} onClick={() => (setOpen(false), onLogout())}>
+            ↩ Log out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const NAV = [
+  { id: "watchlist", label: "Watchlist", icon: "👁" },
+  { id: "owned", label: "Owned", icon: "💼" },
+  { id: "recommendations", label: "Picks", icon: "⭐" },
+  { id: "social", label: "Social", icon: "👥" },
+];
+
+function BottomNav({ page, onGo, badges }) {
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <div className="grid grid-cols-4">
+        {NAV.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onGo(t.id)}
+            className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${page === t.id ? "text-blue-400" : "text-zinc-500"}`}
+          >
+            <span className="text-lg leading-none">{t.icon}</span>
+            {t.label}
+            {badges[t.id] > 0 && (
+              <span className="absolute right-[calc(50%-1.4rem)] top-1.5 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badges[t.id]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 
@@ -1668,201 +2214,17 @@ function SettingsModal({ open, apiKey, onSave, onClose }) {
   );
 }
 
-// ---------- Owned page card ----------
-
-// Uses the precomputed `stat` from App (same analyze()/ownedRisk() result that
-// feeds the portfolio summary bar), so the on-card breach badge and the
-// "needs attention" count can never disagree.
-function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell }) {
-  const { item, data, a, price, risk, gain: gainUsd, gainPct } = stat;
-  const quote = data?.quote;
-  const candles = data?.candles;
-  const dayUp = quote && quote.dp >= 0;
-  const held = daysHeld(item.purchaseDate);
-  const profit = gainUsd != null && gainUsd >= 0;
-  const pd = parseDate(item.purchaseDate);
-  const prettyDate = pd ? pd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
-
-  return (
-    <div
-      className={`flex flex-col rounded-xl border bg-zinc-900 p-4 shadow-md ${
-        risk?.breachedStop
-          ? "border-red-700/70"
-          : risk?.hitTarget
-          ? "border-emerald-700/70"
-          : "border-zinc-800"
-      }`}
-    >
-      {/* header */}
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold tracking-wide text-zinc-100">{item.symbol}</h2>
-            <span className="rounded-full bg-blue-900/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-blue-300">
-              Owned
-            </span>
-            {/* prominent breach / target flag (only one at a time) */}
-            {risk?.breachedStop && (
-              <span className="rounded-full border border-red-500 bg-red-800/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-100">
-                ⚠ Stop-Loss Breached
-              </span>
-            )}
-            {risk && !risk.breachedStop && risk.hitTarget && (
-              <span className="rounded-full border border-emerald-500 bg-emerald-800/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-100">
-                ✓ Target Reached
-              </span>
-            )}
-          </div>
-          <CompanyMeta info={info} />
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          {quote ? (
-            <div className="text-right">
-              <div className="text-lg font-semibold tabular-nums text-zinc-50">${fmt(price)}</div>
-              <div className={`text-xs tabular-nums ${dayUp ? "text-emerald-400" : "text-red-400"}`}>
-                {dayUp ? "▲" : "▼"} {fmt(Math.abs(quote.dp))}% today
-              </div>
-            </div>
-          ) : (
-            <div className="h-8 w-24 animate-pulse rounded bg-zinc-800" />
-          )}
-          <EarningsFlag info={info} />
-        </div>
-      </div>
-
-      {/* position basics */}
-      <div className="grid grid-cols-3 gap-1.5">
-        <Level label="Buy price" value={`$${fmt(item.buyPrice)}`} />
-        <Level label="Quantity" value={`${item.qty}`} />
-        <Level label="Cost basis" value={`$${fmt(item.buyPrice * item.qty)}`} />
-        <Level label="Bought" value={prettyDate} />
-        <Level label="Days held" value={held != null ? `${held}` : "—"} />
-        <Level
-          label="Total return"
-          value={
-            gainUsd != null
-              ? `${profit ? "+" : "−"}$${fmt(Math.abs(gainUsd))} (${gainPct >= 0 ? "+" : ""}${fmt(gainPct)}%)`
-              : "—"
-          }
-          tone={gainUsd == null ? undefined : profit ? "text-emerald-300" : "text-red-300"}
-        />
-      </div>
-
-      {/* real 52-week range + dividend yield */}
-      <FiftyTwoWeek info={info} price={price} />
-
-      {/* chart */}
-      <div className="mt-3">
-        {data?.candleError ? (
-          <div className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-400">
-            {ERROR_TEXT[data.candleError] || ERROR_TEXT.other}
-          </div>
-        ) : candles ? (
-          <MiniChart candles={candles} symbol={item.symbol} />
-        ) : (
-          <div className="h-28 w-full animate-pulse rounded bg-zinc-800" />
-        )}
-      </div>
-
-      {/* price alerts */}
-      <AlertChips symbol={item.symbol} alerts={alerts} price={price} onAdd={onSetAlert} onDelete={onDeleteAlert} />
-
-      {/* position vs risk levels — clear flag */}
-      {risk && (
-        <div
-          className={`mt-3 rounded-md px-3 py-2 text-xs font-medium ${
-            risk.breachedStop
-              ? "border border-red-700/60 bg-red-900/30 text-red-300"
-              : risk.hitTarget
-              ? "border border-emerald-700/60 bg-emerald-900/30 text-emerald-300"
-              : "border border-zinc-700 bg-zinc-800/50 text-zinc-400"
-          }`}
-        >
-          {risk.breachedStop
-            ? `⚠ Price is below your stop-loss ($${fmt(risk.stop)}) — the exit rule has triggered.`
-            : risk.hitTarget
-            ? `✓ Price has reached your target ($${fmt(risk.target)}) — consider taking profit.`
-            : `Within range · ${risk.distToStopPct.toFixed(1)}% above stop · ${risk.distToTargetPct.toFixed(1)}% below target`}
-        </div>
-      )}
-
-      {/* risk parameters */}
-      {risk && (
-        <div className="mt-3">
-          <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500">Risk parameters</div>
-          <div className="grid grid-cols-3 gap-1.5">
-            <Level label="Stop-loss" value={`$${fmt(risk.stop)}`} tone="text-red-300" />
-            <Level label="Target (2:1)" value={`$${fmt(risk.target)}`} tone="text-emerald-300" />
-            <Level
-              label="Trailing stop"
-              value={risk.trailing ? `$${fmt(risk.trailing)}` : "—"}
-              tone={risk.trailing ? "text-amber-300" : "text-zinc-500"}
-            />
-          </div>
-          <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-600">
-            Stop = tighter of 8% below entry (${fmt(risk.stopByPct)})
-            {risk.stopBySupport != null ? ` or 2% below the 50-day ($${fmt(risk.stopBySupport)})` : ""}. Target = 16%
-            above entry (2:1 vs the initial 8% risk).
-            {risk.trailing
-              ? ` Up ${risk.upPct.toFixed(0)}% — consider trailing the stop to $${fmt(risk.trailing)} to lock in gains.`
-              : ""}
-          </p>
-        </div>
-      )}
-
-      {/* ongoing signal + hold/sell/trim recommendation */}
-      {a && risk && (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${signalChipStyle(a.signal, a.signalStrong)}`}>
-              {a.signalLabel}
-            </span>
-            {a.signalMixed && <span className="text-[10px] italic text-amber-400/80">(mixed signals)</span>}
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500">→</span>
-            <span className={`rounded-md px-2.5 py-1 text-sm font-semibold ${actionStyle(risk.rec)}`}>{risk.rec}</span>
-          </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
-            {risk.recReason}
-            {a.macd
-              ? ` MACD is ${a.macd.bull ? "bullish" : "bearish"}${
-                  a.signalStrong ? " — all three indicators agree." : a.signalMixed ? " but signals are mixed." : "."
-                }`
-              : ""}
-          </p>
-        </div>
-      )}
-
-      {/* analyst ratings (real latest-period consensus) */}
-      <AnalystRatings info={info} />
-
-      {/* recent news (collapsible) */}
-      <NewsSection info={info} />
-
-      {/* disclaimer near the sell/stop guidance */}
-      <p className="mt-3 text-[10px] leading-relaxed text-zinc-600">
-        Stop-loss and target levels are mechanical calculations for education only — not financial advice.
-      </p>
-
-      {/* sell action */}
-      <button
-        onClick={() => onSell(item.symbol)}
-        className="mt-2 rounded-md bg-red-800/80 px-3 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-700"
-      >
-        Sell position
-      </button>
-    </div>
-  );
-}
-
 // ---------- modals ----------
 
 function BuyModal({ open, symbol, price, onConfirm, onClose }) {
   const [p, setP] = useState("");
   const [q, setQ] = useState("");
+  const [note, setNote] = useState("");
   useEffect(() => {
     if (open) {
       setP(price != null ? String(price) : "");
       setQ("");
+      setNote("");
     }
   }, [open, price, symbol]);
   if (!open) return null;
@@ -1870,9 +2232,9 @@ function BuyModal({ open, symbol, price, onConfirm, onClose }) {
   const qv = parseFloat(q);
   const valid = pv > 0 && qv > 0;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
+        className="w-full max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-1 text-lg font-semibold text-zinc-100">Buy {symbol}</h2>
@@ -1901,16 +2263,25 @@ function BuyModal({ open, symbol, price, onConfirm, onClose }) {
           className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500"
         />
         {valid && (
-          <div className="mb-4 text-xs text-zinc-500">
+          <div className="mb-3 text-xs text-zinc-500">
             Cost basis: <span className="font-semibold text-zinc-300">${fmt(pv * qv)}</span>
           </div>
         )}
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">Why are you buying? (optional)</label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value.slice(0, 280))}
+          rows={2}
+          placeholder="e.g. Earnings beat, holding long-term"
+          className="mb-1 w-full resize-none rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+        />
+        <div className="mb-4 text-[11px] text-zinc-500">Shared with your connections in their feed (if your activity sharing is on).</div>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800">
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(pv, qv)}
+            onClick={() => onConfirm(pv, qv, note)}
             disabled={!valid}
             className="rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-40"
           >
@@ -2334,7 +2705,52 @@ function scoreBadgeStyle(score) {
   return "bg-zinc-800 text-zinc-300 border border-zinc-600/60";
 }
 
-function TopPicksSection({ cache, progress, watchlist, onAdd }) {
+// Most-owned / most-watched among your connections
+function FriendsPicks({ friendsBySymbol, watchlist, onAdd, onOpen }) {
+  const inList = new Set(watchlist.map((w) => w.symbol));
+  const rows = Object.entries(friendsBySymbol)
+    .map(([symbol, f]) => ({ symbol, owners: f.owners.length, watchers: f.watchers.length, people: [...f.owners, ...f.watchers] }))
+    .sort((a, b) => b.owners * 2 + b.watchers - (a.owners * 2 + a.watchers))
+    .slice(0, 8);
+  return (
+    <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <h2 className="mb-1 text-base font-semibold text-zinc-100">👥 Popular with your friends</h2>
+      <p className="mb-3 text-[11px] text-zinc-500">What your connections own and watch the most (based on what they share).</p>
+      {rows.length === 0 ? (
+        <div className="rounded-md bg-zinc-800/40 px-3 py-3 text-sm text-zinc-500">Connect with friends on the Social tab to see what they're into.</div>
+      ) : (
+        <ul className="divide-y divide-zinc-800">
+          {rows.map((r) => (
+            <li key={r.symbol} className="flex items-center gap-3 py-2">
+              <button onClick={() => onOpen(r.symbol)} className="w-16 text-left font-semibold text-zinc-100 hover:text-blue-300">
+                {r.symbol}
+              </button>
+              <span className="flex -space-x-2">
+                {r.people.slice(0, 4).map((u, i) => (
+                  <Avatar key={u.id + i} url={u.avatar_url} name={u.full_name} size="xs" />
+                ))}
+              </span>
+              <span className="flex-1 text-xs text-zinc-400">
+                {r.owners > 0 && `${r.owners} own`}
+                {r.owners > 0 && r.watchers > 0 && " · "}
+                {r.watchers > 0 && `${r.watchers} watching`}
+              </span>
+              <button
+                onClick={() => onAdd(r.symbol)}
+                disabled={inList.has(r.symbol)}
+                className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-blue-600 hover:text-blue-300 disabled:opacity-40"
+              >
+                {inList.has(r.symbol) ? "✓ Yours" : "+ Watch"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function TopPicksSection({ cache, progress, watchlist, onAdd, onOpen }) {
   // exclude Owned tickers from the recommendations; Watching may still appear
   const owned = new Set(watchlist.filter((w) => w.status === "owned").map((w) => w.symbol));
   const inList = new Set(watchlist.map((w) => w.symbol));
@@ -2351,7 +2767,7 @@ function TopPicksSection({ cache, progress, watchlist, onAdd }) {
         )}
       </div>
       <p className="mb-3 text-[11px] text-zinc-600">
-        Algorithmic screen based on public data (50% technicals, 50% fundamentals) — not financial advice.
+        Algorithmic screen based on public data (50% technicals, 50% fundamentals)<Info term="score" /> — not financial advice.
       </p>
 
       {progress ? (
@@ -2388,6 +2804,7 @@ function TopPicksSection({ cache, progress, watchlist, onAdd }) {
                     <span className="mt-0.5 text-[9px] uppercase tracking-wider text-zinc-600">score / 100</span>
                   </div>
                 </div>
+                {pickReason(p) && <p className="mb-2 text-sm text-zinc-200">{pickReason(p)}</p>}
                 <div className="mb-3 flex flex-1 flex-wrap content-start gap-1.5">
                   {p.reasons.map((r, i) => (
                     <span key={i} className="rounded-full bg-zinc-800/70 px-2 py-0.5 text-[10px] text-zinc-400">
@@ -2395,13 +2812,18 @@ function TopPicksSection({ cache, progress, watchlist, onAdd }) {
                     </span>
                   ))}
                 </div>
-                <button
-                  onClick={() => onAdd(p.symbol)}
-                  disabled={inList.has(p.symbol)}
-                  className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-2 text-xs font-medium text-zinc-200 transition hover:border-blue-600 hover:text-blue-300 disabled:cursor-default disabled:opacity-40"
-                >
-                  {inList.has(p.symbol) ? "On watchlist ✓" : "+ Add to Watchlist"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onAdd(p.symbol)}
+                    disabled={inList.has(p.symbol)}
+                    className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-2 text-xs font-medium text-zinc-200 transition hover:border-blue-600 hover:text-blue-300 disabled:cursor-default disabled:opacity-40"
+                  >
+                    {inList.has(p.symbol) ? "On watchlist ✓" : "+ Add to Watchlist"}
+                  </button>
+                  <button onClick={() => onOpen(p.symbol)} className="rounded-md border border-zinc-700 px-3 py-2 text-xs text-zinc-300 hover:border-blue-600 hover:text-blue-300">
+                    Details
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -2616,7 +3038,7 @@ function AuthScreen() {
 // ---------- Social: a connection's portfolio (read-only) ----------
 
 // Compact read-only card for one of a connection's stocks.
-function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, onAdd }) {
+function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, onAdd, onOpen }) {
   const quote = data?.quote;
   const candles = data?.candles;
   const a = candles ? analyze(candles, quote, item) : null;
@@ -2630,7 +3052,9 @@ function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, 
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold tracking-wide text-zinc-100">{item.symbol}</h3>
+            <button onClick={() => onOpen?.(item.symbol)} className="text-base font-semibold tracking-wide text-zinc-100 hover:text-blue-300">
+              {item.symbol}
+            </button>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
                 owned ? "bg-blue-900/50 text-blue-300" : "bg-zinc-800 text-zinc-400"
@@ -2706,7 +3130,7 @@ function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, 
   );
 }
 
-function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySymbols, onAddToWatchlist }) {
+function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySymbols, onAddToWatchlist, onAddMany, onOpenStock }) {
   const [pf, setPf] = useState(undefined); // undefined = loading, null = unavailable
   const [err, setErr] = useState(null);
   const first = (name || "").split(" ")[0] || "They";
@@ -2793,6 +3217,7 @@ function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySym
                       showGain={showGain}
                       inMyList={mine.has(item.symbol)}
                       onAdd={onAddToWatchlist}
+                      onOpen={onOpenStock}
                     />
                   ))}
                 </div>
@@ -2804,7 +3229,17 @@ function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySym
 
           {pf.watchlist && (
             <>
-              <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Watching ({watching.length})</h4>
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Watching ({watching.length})</h4>
+                {onAddMany && [...owned, ...watching].some((i) => !mine.has(i.symbol)) && (
+                  <button
+                    onClick={() => onAddMany([...owned, ...watching].map((i) => i.symbol))}
+                    className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-blue-600 hover:text-blue-300"
+                  >
+                    Copy all to my watchlist
+                  </button>
+                )}
+              </div>
               {watching.length ? (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {watching.map((item) => (
@@ -2815,6 +3250,7 @@ function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySym
                       info={stockInfo[item.symbol]}
                       inMyList={mine.has(item.symbol)}
                       onAdd={onAddToWatchlist}
+                      onOpen={onOpenStock}
                     />
                   ))}
                 </div>
@@ -2865,6 +3301,22 @@ export default function App() {
   const [alertModal, setAlertModal] = useState(null); // { symbol, price } | null
   const [transactions, setTransactions] = useState([]); // closed trades (realized P/L)
   const [incomingCount, setIncomingCount] = useState(0); // pending connection requests (Social tab badge)
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("ssd_theme") || "dark";
+    } catch (_) {
+      return "dark";
+    }
+  });
+  const [myProfile, setMyProfile] = useState(null); // your social profile (avatar in the header)
+  const [friendsBySymbol, setFriendsBySymbol] = useState({}); // symbol -> { owners: [user], watchers: [user] }
+  const [notifs, setNotifs] = useState([]);
+  const [detail, setDetail] = useState(null); // symbol shown on the full stock page
+  const [socialRoute, setSocialRoute] = useState(null); // { tab, profileId, groupId, n }
+  const [toast, setToast] = useState(null);
+  const [sellModal, setSellModal] = useState(null); // { symbol, price }
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [benchCandles, setBenchCandles] = useState(null); // SPY, for the performance chart
 
   // add-ticker form
   const [symInput, setSymInput] = useState("");
@@ -2885,6 +3337,14 @@ export default function App() {
   // device preferences (not account data): Finnhub key + last-viewed tab
   useEffect(() => {
     (async () => {
+      // Invite links (?invite=<code>) are remembered until you're logged in with a profile.
+      const invite = new URLSearchParams(window.location.search).get("invite");
+      if (invite) {
+        try {
+          localStorage.setItem("ssd_pending_invite", invite);
+        } catch (_) {}
+        history.replaceState(null, "", window.location.pathname + window.location.hash);
+      }
       // A share link like .../#key=<finnhub key> saves that key on this device,
       // then the key is wiped from the address bar.
       const hashKey = new URLSearchParams(window.location.hash.slice(1)).get("key");
@@ -2903,6 +3363,13 @@ export default function App() {
       if (["watchlist", "owned", "recommendations", "social"].includes(savedPage)) setPage(savedPage);
     })();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+    try {
+      localStorage.setItem("ssd_theme", theme);
+    } catch (_) {}
+  }, [theme]);
 
   // auth session: restore on load (Supabase keeps you logged in) and follow log-in/out
   useEffect(() => {
@@ -3167,6 +3634,17 @@ export default function App() {
   function handleAddPick(symbol) {
     if (watchlist.some((w) => w.symbol === symbol)) return;
     persistWatchlist([...watchlist, { symbol, status: "watching" }]);
+    post("watch", symbol);
+    setToast(`${symbol} added to your watchlist`);
+  }
+
+  // add several at once (copy a friend's watchlist)
+  function handleAddMany(symbols) {
+    const have = new Set(watchlist.map((w) => w.symbol));
+    const add = symbols.filter((s) => !have.has(s));
+    if (!add.length) return;
+    persistWatchlist([...watchlist, ...add.map((symbol) => ({ symbol, status: "watching" }))]);
+    setToast(`Added ${add.length} stock${add.length === 1 ? "" : "s"} to your watchlist`);
   }
 
   // initial + on-key-change load, sequential to respect the free rate limit
@@ -3258,6 +3736,143 @@ export default function App() {
   }, [ready, userId]);
   const onNetwork = useCallback((n) => setIncomingCount(n.incoming.length), []);
 
+  // your profile (header avatar, invite code)
+  useEffect(() => {
+    if (!ready || !userId) {
+      setMyProfile(null);
+      return;
+    }
+    loadMyProfile(userId).then(setMyProfile).catch(() => {});
+  }, [ready, userId]);
+
+  // accept a pending invite link once you have a profile
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let code = null;
+    try {
+      code = localStorage.getItem("ssd_pending_invite");
+    } catch (_) {}
+    if (!code) return;
+    if (!myProfile) {
+      setToast("Create your profile to connect with the friend who invited you");
+      goToPage("social");
+      return;
+    }
+    try {
+      localStorage.removeItem("ssd_pending_invite");
+    } catch (_) {}
+    acceptInvite(code)
+      .then((card) => card && card.id !== userId && setToast(`You're now connected with ${card.full_name} 🎉`))
+      .catch((e) => setToast(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId, myProfile?.id]);
+
+  // which of your friends own / watch each symbol
+  const refreshFriends = useCallback(async () => {
+    try {
+      const rows = await networkSymbols();
+      const map = {};
+      for (const r of rows) {
+        if (!r.user) continue;
+        for (const sym of r.owned || []) (map[sym] ||= { owners: [], watchers: [] }).owners.push(r.user);
+        for (const sym of r.watching || []) (map[sym] ||= { owners: [], watchers: [] }).watchers.push(r.user);
+      }
+      setFriendsBySymbol(map);
+    } catch (_) {}
+  }, []);
+  const onNetworkAll = useCallback(
+    (n) => {
+      onNetwork(n);
+      refreshFriends();
+    },
+    [onNetwork, refreshFriends]
+  );
+  const refreshNotifs = useCallback(() => myNotifications().then(setNotifs).catch(() => {}), []);
+  useEffect(() => {
+    if (!ready || !userId) return;
+    refreshFriends();
+    refreshNotifs();
+    const a = setInterval(refreshFriends, 300_000);
+    const b = setInterval(refreshNotifs, 60_000);
+    return () => {
+      clearInterval(a);
+      clearInterval(b);
+    };
+  }, [ready, userId, refreshFriends, refreshNotifs]);
+
+  // S&P 500 history for the performance chart
+  useEffect(() => {
+    if (!ready || !apiKey || benchCandles || !watchlist.some((w) => w.status === "owned")) return;
+    fetchCandles("SPY", apiKey).then(setBenchCandles).catch(() => {});
+  }, [ready, apiKey, benchCandles, watchlist]);
+
+  // post to your connections' feed (never blocks the UI)
+  const post = useCallback((kind, symbol, data = {}, note = null) => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    postActivity(uid, kind, symbol, data, note).catch(() => {});
+  }, []);
+
+  // full info bundle for the stock page
+  const ensureFullInfo = useCallback(
+    async (sym) => {
+      if (!apiKey) return;
+      if (!fetchedCandles.current.has(sym) || !stockData[sym]?.quote) await loadSymbol(sym, apiKey, { candlesToo: true });
+      const have = stockInfo[sym] || {};
+      const steps = [
+        ["profile", fetchProfile],
+        ["metric", fetchMetrics],
+        ["rec", fetchRecommendation],
+        ["earnings", fetchEarningsDate],
+        ["news", fetchNews],
+      ];
+      fetchedInfo.current.add(sym);
+      for (const [field, fn] of steps) {
+        if (have[field] !== undefined) continue;
+        try {
+          const val = await fn(sym, apiKey);
+          setStockInfo((prev) => ({ ...prev, [sym]: { ...prev[sym], [field]: val } }));
+        } catch (_) {}
+        await sleep(300);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apiKey, loadSymbol, stockInfo]
+  );
+  const openStock = useCallback(
+    (sym) => {
+      const s = String(sym).toUpperCase();
+      setDetail(s);
+      ensureFullInfo(s);
+    },
+    [ensureFullInfo]
+  );
+  const openProfile = useCallback(
+    (id) => {
+      setDetail(null);
+      goToPage("social");
+      setSocialRoute({ tab: null, profileId: id, n: Date.now() });
+    },
+    [goToPage]
+  );
+  const goSocial = useCallback(
+    (tab, extra = {}) => {
+      setDetail(null);
+      goToPage("social");
+      setSocialRoute({ tab, ...extra, n: Date.now() });
+    },
+    [goToPage]
+  );
+  const getQuote = useCallback((sym) => fetchQuote(sym, apiKey), [apiKey]);
+  const quoteOf = useCallback((sym) => stockData[sym], [stockData]);
+
+  function onNotification(n) {
+    if (n.kind === "request") goSocial("requests");
+    else if (n.kind === "accepted" || n.kind === "joined") openProfile(n.actor?.id);
+    else if (n.kind === "group_add") goSocial("groups", { groupId: n.group_id });
+    else goSocial("feed");
+  }
+
   // Load quotes/candles (+ company profile for sectors) for a connection's
   // stocks, sharing the same per-session cache as your own cards.
   const ensureSymbols = useCallback(
@@ -3311,6 +3926,8 @@ export default function App() {
         ? { symbol, status: "owned", buyPrice, qty, purchaseDate: new Date().toISOString().slice(0, 10) }
         : { symbol, status: "watching" };
       persistWatchlist([...watchlist, item]);
+      if (owned) post("buy", symbol, { price: buyPrice, qty });
+      else post("watch", symbol);
       setSymInput("");
       setBuyPriceInput("");
       setQtyInput("");
@@ -3341,7 +3958,7 @@ export default function App() {
 
   // Sell (full position): record the closed trade at the current live price so
   // realized P/L is tracked, then remove the holding.
-  function handleSell(symbol) {
+  function handleSell(symbol, note) {
     const pos = watchlist.find((w) => w.symbol === symbol && w.status === "owned");
     const d = stockData[symbol];
     const sellPrice = d?.quote?.c ?? (d?.candles?.length ? d.candles[d.candles.length - 1].close : null);
@@ -3362,21 +3979,22 @@ export default function App() {
           realizedPct,
         },
       ]);
+      post("sell", symbol, { buyPrice: pos.buyPrice, sellPrice, qty: pos.qty, gainPct: realizedPct, gainUsd: realizedUsd }, note);
     }
+    setSellModal(null);
     handleRemove(symbol);
   }
 
   // Buy: move a Watching ticker into Owned with entry price / qty / date, keeping
   // its already-fetched quote + candles, then jump to the Owned page.
-  function handleBuy(symbol, buyPrice, qty) {
+  function handleBuy(symbol, buyPrice, qty, note) {
+    const pos = { symbol, status: "owned", buyPrice, qty, purchaseDate: new Date().toISOString().slice(0, 10) };
     persistWatchlist(
-      watchlist.map((w) =>
-        w.symbol === symbol
-          ? { symbol, status: "owned", buyPrice, qty, purchaseDate: new Date().toISOString().slice(0, 10) }
-          : w
-      )
+      watchlist.some((w) => w.symbol === symbol) ? watchlist.map((w) => (w.symbol === symbol ? pos : w)) : [...watchlist, pos]
     );
+    post("buy", symbol, { price: buyPrice, qty }, note);
     setBuyModal(null);
+    setDetail(null);
     goToPage("owned");
   }
 
@@ -3414,6 +4032,38 @@ export default function App() {
     return { item, data: d, a, price, risk, value, cost, gain, gainPct };
   });
 
+  // today's signal per symbol, for the "since yesterday" digest
+  const signalLabels = {};
+  for (const w of watchlist) {
+    const d = stockData[w.symbol];
+    if (d?.candles) {
+      const a = analyze(d.candles, d.quote, w);
+      if (a) signalLabels[w.symbol] = a.signalLabel;
+    }
+  }
+  const digest = useDigest(userId, signalLabels, ready);
+
+  // tell connections when a position hits its target or safety line (once per position)
+  useEffect(() => {
+    if (!ready || !accountLoaded.current) return;
+    const events = new Set(accountRef.current.events || []);
+    const add = [];
+    for (const st of ownedStats) {
+      if (!st.risk) continue;
+      const kind = st.risk.breachedStop ? "stop" : st.risk.hitTarget ? "target" : null;
+      if (!kind) continue;
+      const key = `${st.item.symbol}:${kind}:${st.item.buyPrice}:${st.item.purchaseDate || ""}`;
+      if (events.has(key)) continue;
+      add.push(key);
+      post(kind, st.item.symbol, kind === "target" ? { target: st.risk.target, gainPct: st.gainPct } : { stop: st.risk.stop, gainPct: st.gainPct });
+    }
+    if (add.length) {
+      accountRef.current = { ...accountRef.current, events: [...events, ...add].slice(-200) };
+      scheduleSave();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, JSON.stringify(ownedStats.map((s) => [s.item.symbol, s.risk?.hitTarget, s.risk?.breachedStop]))]);
+
   if (session === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-500">Loading…</div>
@@ -3447,100 +4097,70 @@ export default function App() {
     );
   }
 
+  const unread = notifs.filter((n) => !n.read).length;
+  const breached = ownedStats.filter((st) => st.risk?.breachedStop).length;
+  const allSymbols = watchlist.map((w) => w.symbol);
+  const detailItem = detail ? watchlist.find((w) => w.symbol === detail) : null;
+  const goNav = (to) => {
+    if (to.startsWith("social:")) goSocial(to.split(":")[1]);
+    else goToPage(to);
+  };
+  const tabs = [
+    { id: "watchlist", label: "Watchlist", count: watching.length },
+    { id: "owned", label: "Owned", count: owned.length },
+    { id: "recommendations", label: "Picks", count: null },
+    { id: "social", label: "Social", count: null, badge: incomingCount },
+  ];
+
   return (
     <div className="min-h-screen bg-zinc-950 font-sans text-zinc-200">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        {/* header + page nav */}
-        <header className="mb-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold text-zinc-50">Stock Signal Dashboard</h1>
-              <p className="text-sm text-zinc-500">Personal watchlist · 20/50 SMA crossover + 14-day RSI</p>
-            </div>
-            <div className="flex items-center gap-2">
-            <div className="text-right">
-              <div className="max-w-[14rem] truncate text-xs text-zinc-300" title={session.user.email}>
-                {session.user.email}
-              </div>
-              <div
-                className={`text-[10px] ${
-                  saveStatus === "error" ? "text-red-400" : saveStatus === "saving" ? "text-zinc-500" : "text-emerald-500/80"
-                }`}
-              >
-                {saveStatus === "error"
-                  ? "⚠ Not saved — check connection"
-                  : saveStatus === "saving"
-                  ? "Saving…"
-                  : "✓ Saved to your account"}
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-400 transition hover:text-zinc-100"
-            >
-              Log out
+      <div className="mx-auto max-w-6xl px-4 pb-24 pt-4 sm:pb-8 sm:pt-6">
+        {/* header */}
+        <header className="mb-4">
+          <div className="mb-3 flex items-center gap-3">
+            <button onClick={() => goToPage("watchlist")} className="flex shrink-0 items-center gap-2">
+              <img src="./icon.svg" alt="" className="h-8 w-8 rounded-lg" />
+              <span className="hidden text-lg font-bold tracking-tight text-zinc-50 md:inline">Stock Signals</span>
             </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              title="Settings"
-              className="rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-zinc-400 transition hover:text-zinc-100"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-              </svg>
-            </button>
+            <div className="min-w-0 flex-1">
+              <StockSearch apiKey={apiKey} onOpen={openStock} />
             </div>
+            <NotificationsBell uid={userId} items={notifs} onRefresh={refreshNotifs} onOpen={onNotification} />
+            <HeaderMenu
+              email={session.user.email}
+              profile={myProfile}
+              theme={theme}
+              onTheme={setTheme}
+              onSettings={() => setSettingsOpen(true)}
+              onProfile={() => goSocial("me")}
+              onWelcome={() => (setShowWelcome(true), goToPage("watchlist"))}
+              onLogout={handleLogout}
+              saveStatus={saveStatus}
+            />
           </div>
-          {/* tab nav */}
-          <nav className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1">
-            {[
-              { id: "watchlist", label: "Watchlist", count: watchlist.filter((w) => w.status !== "owned").length },
-              { id: "owned", label: "Owned", count: watchlist.filter((w) => w.status === "owned").length },
-              { id: "recommendations", label: "Picks", count: null },
-              { id: "social", label: "Social", count: null, badge: incomingCount },
-            ].map((tab) => (
+          {/* tabs (top on desktop; bottom bar on phones) */}
+          <nav className="hidden gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1 sm:flex">
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => goToPage(tab.id)}
-                className={`flex-1 min-w-0 rounded-md px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium transition ${
+                className={`flex-1 min-w-0 rounded-lg px-4 py-2 text-sm font-medium transition ${
                   page === tab.id ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
                 {tab.label}
                 {tab.count != null && tab.count > 0 && (
-                  <span
-                    className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
-                      page === tab.id ? "bg-blue-500/60" : "bg-zinc-800"
-                    }`}
-                  >
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${page === tab.id ? "bg-blue-500/60" : "bg-zinc-800"}`}>
                     {tab.count}
                   </span>
                 )}
-                {tab.badge > 0 && (
-                  <span className="ml-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] text-white">{tab.badge}</span>
-                )}
+                {tab.badge > 0 && <span className="ml-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] text-white">{tab.badge}</span>}
               </button>
             ))}
           </nav>
         </header>
 
-        {/* no-key setup panel */}
-        {!apiKey && (
-          <div className="mb-6 rounded-xl border border-blue-900/60 bg-blue-950/30 p-5">
-            <h2 className="mb-1 font-semibold text-blue-200">Connect Finnhub to get started</h2>
-            <p className="mb-3 text-sm text-blue-300/70">
-              This dashboard pulls quotes and history straight from Finnhub in your browser. Grab a free API key at
-              finnhub.io and paste it here — it's saved so you won't need to re-enter it.
-            </p>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-            >
-              Enter API key
-            </button>
-          </div>
-        )}
+        {apiKey && <TodayStrip ownedStats={ownedStats} alerts={alerts} breached={breached} incoming={incomingCount} unread={unread} onNav={goNav} />}
 
         {/* fired price alerts — shown on every page until dismissed */}
         <TriggeredAlertsBanner alerts={alerts} onDismiss={deleteAlert} />
@@ -3548,97 +4168,113 @@ export default function App() {
         {/* ===================== WATCHLIST PAGE ===================== */}
         {page === "watchlist" && (
           <>
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-zinc-400">Add or buy a stock</h2>
-        {/* add ticker */}
-        <form
-          onSubmit={handleAdd}
-          className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-4"
-        >
-          <div className="flex flex-col">
-            <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Ticker</label>
-            <input
-              value={symInput}
-              onChange={(e) => setSymInput(e.target.value.toUpperCase())}
-              placeholder="AAPL"
-              className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm uppercase text-zinc-100 outline-none focus:border-blue-500"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Status</label>
-            <select
-              value={statusInput}
-              onChange={(e) => setStatusInput(e.target.value)}
-              className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
-            >
-              <option value="watching">Watching</option>
-              <option value="owned">Owned</option>
-            </select>
-          </div>
-          {statusInput === "owned" && (
-            <>
-              <div className="flex flex-col">
-                <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Buy price</label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={buyPriceInput}
-                  onChange={(e) => setBuyPriceInput(e.target.value)}
-                  placeholder="182.50"
-                  className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
-                />
+            {(!apiKey || showWelcome || watchlist.length === 0) && (
+              <div className="relative">
+                {showWelcome && watchlist.length > 0 && (
+                  <button onClick={() => setShowWelcome(false)} className="absolute right-3 top-3 z-10 text-zinc-500 hover:text-zinc-200" title="Close">
+                    ✕
+                  </button>
+                )}
+                <Welcome hasKey={!!apiKey} onAdd={handleAddPick} onOpenSettings={() => setSettingsOpen(true)} />
               </div>
-              <div className="flex flex-col">
-                <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Quantity</label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={qtyInput}
-                  onChange={(e) => setQtyInput(e.target.value)}
-                  placeholder="10"
-                  className="w-24 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
-                />
-              </div>
-            </>
-          )}
-          <button
-            type="submit"
-            disabled={addBusy || !symInput.trim()}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:opacity-40"
-          >
-            {addBusy ? "Checking…" : "Add"}
-          </button>
-          {addError && <div className="basis-full text-sm text-red-400">{addError}</div>}
-        </form>
+            )}
 
-        {/* grid — Watching stocks only */}
-        {watching.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-800 p-10 text-center text-zinc-600">
-            No stocks on your watchlist yet — add one above to see live quotes, charts, and a full trade read (support,
-            resistance, stop-loss, target). Or check the{" "}
-            <button onClick={() => goToPage("recommendations")} className="text-blue-400 hover:underline">
-              Recommendations
-            </button>{" "}
-            tab for today's top screened stocks.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {watching.map((item) => (
-              <StockCard
-                key={item.symbol}
-                item={item}
-                data={stockData[item.symbol]}
-                info={stockInfo[item.symbol]}
-                alerts={alerts}
-                onSetAlert={openAlert}
-                onDeleteAlert={deleteAlert}
-                onBuy={(symbol, price) => setBuyModal({ symbol, price })}
-                onRemove={(symbol) => setConfirm({ kind: "remove", symbol })}
-              />
-            ))}
-          </div>
-        )}
+            {watchlist.length > 0 && (
+              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <DigestCard changes={digest.changes} ownedStats={ownedStats} stockInfo={stockInfo} symbols={allSymbols} onOpenStock={openStock} />
+                <EarningsList symbols={allSymbols} stockInfo={stockInfo} onOpenStock={openStock} />
+              </div>
+            )}
+
+            <form onSubmit={handleAdd} className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <div className="flex flex-col">
+                <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Ticker</label>
+                <input
+                  value={symInput}
+                  onChange={(e) => setSymInput(e.target.value.toUpperCase())}
+                  placeholder="AAPL"
+                  className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm uppercase text-zinc-100 outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Status</label>
+                <select
+                  value={statusInput}
+                  onChange={(e) => setStatusInput(e.target.value)}
+                  className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
+                >
+                  <option value="watching">Watching</option>
+                  <option value="owned">Owned</option>
+                </select>
+              </div>
+              {statusInput === "owned" && (
+                <>
+                  <div className="flex flex-col">
+                    <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Buy price</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={buyPriceInput}
+                      onChange={(e) => setBuyPriceInput(e.target.value)}
+                      placeholder="182.50"
+                      className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500">Quantity</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={qtyInput}
+                      onChange={(e) => setQtyInput(e.target.value)}
+                      placeholder="10"
+                      className="w-24 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </>
+              )}
+              <button
+                type="submit"
+                disabled={addBusy || !symInput.trim()}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-40"
+              >
+                {addBusy ? "Checking…" : "Add"}
+              </button>
+              <span className="text-xs text-zinc-500">Don't know the ticker? Use the search at the top.</span>
+              {addError && <div className="basis-full text-sm text-red-400">{addError}</div>}
+            </form>
+
+            {watching.length === 0 ? (
+              watchlist.length > 0 && (
+                <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
+                  Nothing on your watchlist right now. Add a stock above, or check{" "}
+                  <button onClick={() => goToPage("recommendations")} className="text-blue-400 hover:underline">
+                    Picks
+                  </button>{" "}
+                  for ideas.
+                </div>
+              )
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {watching.map((item) => (
+                  <StockCard
+                    key={item.symbol}
+                    item={item}
+                    data={stockData[item.symbol]}
+                    info={stockInfo[item.symbol]}
+                    alerts={alerts}
+                    onSetAlert={openAlert}
+                    onDeleteAlert={deleteAlert}
+                    onBuy={(symbol, price) => setBuyModal({ symbol, price })}
+                    onRemove={(symbol) => setConfirm({ kind: "remove", symbol })}
+                    friends={friendsBySymbol[item.symbol]}
+                    onOpen={openStock}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -3646,22 +4282,25 @@ export default function App() {
         {page === "owned" && (
           <>
             {owned.length === 0 ? (
-              <div className="mb-4 rounded-xl border border-dashed border-zinc-800 p-10 text-center text-zinc-600">
+              <div className="mb-4 rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
                 You don't own any stocks yet. Add a stock on the{" "}
                 <button onClick={() => goToPage("watchlist")} className="text-blue-400 hover:underline">
                   Watchlist
                 </button>{" "}
-                and hit <span className="text-emerald-400">Buy</span> to start tracking a position — buy price,
-                stop-loss, target and a hold/sell read will show up here.
+                and hit <span className="text-emerald-400">Buy</span> to start tracking a position — your profit, safety line and target show up here.
               </div>
             ) : (
               <>
                 <PortfolioSummaryBar stats={ownedStats} />
+                <PerformanceChart owned={owned} stockData={stockData} benchCandles={benchCandles} />
                 <PortfolioHighlights stats={ownedStats} />
+                <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <DividendsCard ownedStats={ownedStats} stockInfo={stockInfo} />
+                  <EarningsList symbols={owned.map((o) => o.symbol)} stockInfo={stockInfo} onOpenStock={openStock} />
+                </div>
                 <SectorAllocation stats={ownedStats} info={stockInfo} />
               </>
             )}
-            {/* realized P/L shows even after everything is sold */}
             <RealizedPnL transactions={transactions} onClear={() => persistTransactions([])} />
             {owned.length > 0 && (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -3673,7 +4312,9 @@ export default function App() {
                     alerts={alerts}
                     onSetAlert={openAlert}
                     onDeleteAlert={deleteAlert}
-                    onSell={(symbol) => setConfirm({ kind: "sell", symbol })}
+                    onSell={(symbol) => setSellModal({ symbol, price: stat.price })}
+                    friends={friendsBySymbol[stat.item.symbol]}
+                    onOpen={openStock}
                   />
                 ))}
               </div>
@@ -3681,20 +4322,19 @@ export default function App() {
           </>
         )}
 
-        {/* ===================== RECOMMENDATIONS PAGE ===================== */}
-        {page === "recommendations" &&
-          (apiKey ? (
-            <TopPicksSection
-              cache={pickCache}
-              progress={scanProgress}
-              watchlist={watchlist}
-              onAdd={handleAddPick}
-            />
-          ) : (
-            <div className="rounded-xl border border-dashed border-zinc-800 p-10 text-center text-zinc-600">
-              Add a Finnhub API key in Settings to run the daily screen.
-            </div>
-          ))}
+        {/* ===================== PICKS PAGE ===================== */}
+        {page === "recommendations" && (
+          <>
+            {apiKey ? (
+              <TopPicksSection cache={pickCache} progress={scanProgress} watchlist={watchlist} onAdd={handleAddPick} onOpen={openStock} />
+            ) : (
+              <div className="mb-6 rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
+                Add a market-data key in Settings to run the daily screen.
+              </div>
+            )}
+            <FriendsPicks friendsBySymbol={friendsBySymbol} watchlist={watchlist} onAdd={handleAddPick} onOpen={openStock} />
+          </>
+        )}
 
         {/* ===================== SOCIAL PAGE ===================== */}
         {page === "social" && (
@@ -3702,7 +4342,16 @@ export default function App() {
             uid={userId}
             email={session.user.email}
             counts={{ owned_count: owned.length, watching_count: watching.length }}
-            onNetwork={onNetwork}
+            onNetwork={onNetworkAll}
+            route={socialRoute}
+            onProfile={setMyProfile}
+            apiKey={apiKey}
+            onOpenStock={openStock}
+            ensureSymbols={ensureSymbols}
+            quoteOf={quoteOf}
+            getQuote={getQuote}
+            mySymbols={allSymbols}
+            onAddToWatchlist={handleAddPick}
             renderPortfolio={(uid, name) => (
               <FriendPortfolio
                 key={uid}
@@ -3711,24 +4360,40 @@ export default function App() {
                 stockData={stockData}
                 stockInfo={stockInfo}
                 ensureSymbols={ensureSymbols}
-                mySymbols={watchlist.map((w) => w.symbol)}
+                mySymbols={allSymbols}
                 onAddToWatchlist={handleAddPick}
+                onAddMany={handleAddMany}
+                onOpenStock={openStock}
               />
             )}
           />
         )}
 
-        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">
-          Educational tool only, not financial advice.
-        </footer>
+        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">Educational tool only, not financial advice.</footer>
       </div>
 
-      <SettingsModal
-        open={settingsOpen}
-        apiKey={apiKey}
-        onSave={handleSaveKey}
-        onClose={() => setSettingsOpen(false)}
-      />
+      <BottomNav page={page} onGo={goToPage} badges={{ social: incomingCount + (unread && !incomingCount ? 0 : 0) }} />
+
+      {detail && (
+        <StockDetail
+          symbol={detail}
+          item={detailItem}
+          data={stockData[detail]}
+          info={stockInfo[detail]}
+          alerts={alerts}
+          friends={friendsBySymbol[detail]}
+          uid={userId}
+          inList={!!detailItem}
+          onClose={() => setDetail(null)}
+          onAdd={handleAddPick}
+          onBuy={(symbol, price) => setBuyModal({ symbol, price })}
+          onSetAlert={openAlert}
+          onDeleteAlert={deleteAlert}
+          onOpenProfile={openProfile}
+        />
+      )}
+
+      <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} />
 
       <AlertModal
         open={!!alertModal}
@@ -3742,22 +4407,28 @@ export default function App() {
         open={!!buyModal}
         symbol={buyModal?.symbol}
         price={buyModal?.price}
-        onConfirm={(price, qty) => handleBuy(buyModal.symbol, price, qty)}
+        onConfirm={(price, qty, note) => handleBuy(buyModal.symbol, price, qty, note)}
         onClose={() => setBuyModal(null)}
+      />
+
+      <SellModal
+        open={!!sellModal}
+        symbol={sellModal?.symbol}
+        price={sellModal?.price}
+        onConfirm={(note) => handleSell(sellModal.symbol, note)}
+        onClose={() => setSellModal(null)}
       />
 
       <ConfirmModal
         open={!!confirm}
-        title={confirm?.kind === "sell" ? `Sell ${confirm.symbol}?` : `Remove ${confirm?.symbol}?`}
-        message={
-          confirm?.kind === "sell"
-            ? "This closes the full position at the current price, records the realized profit/loss in your trade history, and removes it from Owned."
-            : "This removes the stock from your watchlist (and any price alerts on it). You can always add it back later."
-        }
-        confirmLabel={confirm?.kind === "sell" ? "Sell position" : "Remove"}
-        onConfirm={() => (confirm.kind === "sell" ? handleSell(confirm.symbol) : handleRemove(confirm.symbol))}
+        title={`Remove ${confirm?.symbol}?`}
+        message="This removes the stock from your watchlist (and any price alerts on it). You can always add it back later."
+        confirmLabel="Remove"
+        onConfirm={() => handleRemove(confirm.symbol)}
         onClose={() => setConfirm(null)}
       />
+
+      <Toast message={toast} onDone={() => setToast(null)} />
     </div>
   );
 }
