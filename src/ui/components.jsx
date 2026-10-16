@@ -1,3 +1,4 @@
+import { IconToken } from "./icons.jsx";
 import React, { useEffect, useRef, useState } from "react";
 import { GLOSSARY } from "./explain.js";
 
@@ -41,7 +42,7 @@ const TONE = {
   good: "bg-emerald-600 text-white",
   bad: "bg-red-600 text-white",
   caution: "bg-amber-500 text-zinc-950",
-  neutral: "bg-zinc-600 text-white",
+  neutral: "bg-zinc-100 text-zinc-950",
 };
 const DOT = { good: "bg-emerald-400", bad: "bg-red-400", caution: "bg-amber-400", neutral: "bg-zinc-400" };
 
@@ -90,7 +91,7 @@ export function WhyPanel({ ex, compact = false }) {
         <div className="space-y-2.5 px-3 pb-3">
           {ex.rows.map((r) => (
             <div key={r.key} className="flex gap-2 text-sm">
-              <span className="shrink-0">{r.icon}</span>
+              <span className="mt-0.5 shrink-0"><IconToken name={r.icon} /></span>
               <div className="min-w-0">
                 <div className="font-semibold text-zinc-100">
                   {r.title}

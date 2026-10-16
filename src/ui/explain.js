@@ -86,17 +86,17 @@ export function explainStock(a, { owned = false, risk = null } = {}) {
   // 1) trend
   if (a.uptrend) {
     rows.push({
-      icon: "✅", key: "trend", title: "Trending up",
+      icon: "good", key: "trend", title: "Trending up",
       text: `The 20-day average (${$(a.sma20)}) is ${pct(a.spreadPct)} above the 50-day (${$(a.sma50)}), so prices have been climbing for weeks.`,
     });
   } else if (a.downtrend) {
     rows.push({
-      icon: "❌", key: "trend", title: "Trending down",
+      icon: "bad", key: "trend", title: "Trending down",
       text: `The 20-day average (${$(a.sma20)}) is ${pct(a.spreadPct)} below the 50-day (${$(a.sma50)}), so prices have been sliding.`,
     });
   } else {
     rows.push({
-      icon: "⚠️", key: "trend", title: "No clear trend",
+      icon: "caution", key: "trend", title: "No clear trend",
       text: `The 20-day (${$(a.sma20)}) and 50-day (${$(a.sma50)}) averages are within ${pct(a.spreadPct)} of each other.`,
     });
   }
@@ -108,18 +108,18 @@ export function explainStock(a, { owned = false, risk = null } = {}) {
   // 2) momentum (RSI)
   const r = a.rsi14;
   const dir = a.rsiRising ? " and rising" : a.rsiFalling ? " and cooling" : "";
-  if (r >= 70) rows.push({ icon: "⚠️", key: "rsi", title: `Overheated (RSI ${r.toFixed(0)})`, text: `Lots of recent buying${dir}; stocks often pause or dip from here.` });
-  else if (r >= 50) rows.push({ icon: "✅", key: "rsi", title: `Healthy buying (RSI ${r.toFixed(0)})`, text: `Buyers are in control${dir}, but it isn't overheated (that's above 70).` });
-  else if (r > 30) rows.push({ icon: "⚠️", key: "rsi", title: `Weak momentum (RSI ${r.toFixed(0)})`, text: `Sellers have had the edge lately${dir}.` });
-  else rows.push({ icon: "⚠️", key: "rsi", title: `Oversold (RSI ${r.toFixed(0)})`, text: `Heavy selling${dir}; a bounce is possible but not guaranteed.` });
+  if (r >= 70) rows.push({ icon: "caution", key: "rsi", title: `Overheated (RSI ${r.toFixed(0)})`, text: `Lots of recent buying${dir}; stocks often pause or dip from here.` });
+  else if (r >= 50) rows.push({ icon: "good", key: "rsi", title: `Healthy buying (RSI ${r.toFixed(0)})`, text: `Buyers are in control${dir}, but it isn't overheated (that's above 70).` });
+  else if (r > 30) rows.push({ icon: "caution", key: "rsi", title: `Weak momentum (RSI ${r.toFixed(0)})`, text: `Sellers have had the edge lately${dir}.` });
+  else rows.push({ icon: "caution", key: "rsi", title: `Oversold (RSI ${r.toFixed(0)})`, text: `Heavy selling${dir}; a bounce is possible but not guaranteed.` });
 
   // 3) MACD turn
   if (a.macd) {
     const when = a.macd.crossAgo == null ? "a while ago" : a.macd.crossAgo === 0 ? "today" : a.macd.crossAgo === 1 ? "1 day ago" : `${a.macd.crossAgo} days ago`;
     rows.push(
       a.macd.bull
-        ? { icon: "✅", key: "macd", title: "Turning up", text: `Short-term momentum crossed above its signal line ${when}.` }
-        : { icon: "❌", key: "macd", title: "Turning down", text: `Short-term momentum dropped below its signal line ${when}.` }
+        ? { icon: "good", key: "macd", title: "Turning up", text: `Short-term momentum crossed above its signal line ${when}.` }
+        : { icon: "bad", key: "macd", title: "Turning down", text: `Short-term momentum dropped below its signal line ${when}.` }
     );
   }
 
@@ -141,9 +141,9 @@ export function explainStock(a, { owned = false, risk = null } = {}) {
   }
 
   const extras = [];
-  if (a.volRatio != null && a.volRatio >= 1.3) extras.push(`📊 Trading volume in the last session was ${a.volRatio.toFixed(1)}× normal — lots of interest.`);
+  if (a.volRatio != null && a.volRatio >= 1.3) extras.push(`Trading volume in the last session was ${a.volRatio.toFixed(1)}× normal — lots of interest.`);
   if (a.pctFromHigh != null && a.pctFromHigh > -5)
-    extras.push(a.pctFromHigh > -0.1 ? "📍 Price is at its 6-month high." : `📍 Price is ${pct(a.pctFromHigh)} below its 6-month high.`);
+    extras.push(a.pctFromHigh > -0.1 ? "Price is at its 6-month high." : `Price is ${pct(a.pctFromHigh)} below its 6-month high.`);
 
   return { verdict, tone, dots, confidence, rows, bottom, extras, summary: summaryLine(a), rationale: owned && risk ? risk.recReason : a.rationale };
 }

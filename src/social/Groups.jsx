@@ -43,7 +43,7 @@ function GroupChallenge({ gid, ensureSymbols, quoteOf, onOpenStock, onJoinChalle
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🏁 {month} group challenge</h3>
+        <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{month} group challenge</h3>
         {!mine && (
           <button onClick={onJoinChallenge} className="text-xs text-blue-400 hover:underline">
             Join →
@@ -58,7 +58,7 @@ function GroupChallenge({ gid, ensureSymbols, quoteOf, onOpenStock, onJoinChalle
         <ol className="space-y-1">
           {ranked.map((r, i) => (
             <li key={r.user?.id || i} className="flex items-center gap-2 text-sm">
-              <span className="w-5 text-center">{["🥇", "🥈", "🥉"][i] || i + 1}</span>
+              <span className="w-5 text-center">{i + 1}</span>
               <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size="xs" />
               <span className="min-w-0 flex-1 truncate text-zinc-300">
                 {r.me ? "You" : r.user?.full_name}
@@ -172,14 +172,14 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
         {/* live chat */}
         <section className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900 md:col-span-3">
           <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">💬 Group chat</h3>
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group chat</h3>
             <span className="flex items-center gap-1 text-[10px] text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> live
             </span>
           </div>
           <div ref={chatRef} className="h-[22rem] space-y-2 overflow-y-auto px-3 py-3">
             {g.posts.length === 0 ? (
-              <div className="py-10 text-center text-sm text-zinc-500">No messages yet — say hi 👋</div>
+              <div className="py-10 text-center text-sm text-zinc-500">No messages yet — say hi </div>
             ) : (
               [...g.posts].reverse().map((p) => (
                 <div key={p.id} className={`flex gap-2 ${p.mine ? "flex-row-reverse" : ""}`}>
@@ -192,7 +192,7 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
                     {!p.mine && <div className="text-[11px] font-semibold text-zinc-400">{p.author?.full_name}</div>}
                     {p.symbol && (
                       <button onClick={() => onOpenStock?.(p.symbol)} className={`mb-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.mine ? "bg-blue-500 text-white" : "bg-zinc-700 text-blue-300"}`}>
-                        📈 {p.symbol}
+                        {p.symbol}
                       </button>
                     )}
                     <div className="whitespace-pre-line text-sm">{p.body}</div>
@@ -240,7 +240,7 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
                 placeholder="Add ticker"
                 className={`${input} w-28 uppercase`}
               />
-              <button disabled={!sym} onClick={() => run(() => addGroupSymbol(uid, gid, sym).then(() => setSym("")))} className={`${btn} bg-zinc-700 text-white hover:bg-zinc-600`}>
+              <button disabled={!sym} onClick={() => run(() => addGroupSymbol(uid, gid, sym).then(() => setSym("")))} className={`${btn} bg-zinc-100 text-zinc-950 hover:bg-zinc-600`}>
                 Add
               </button>
             </div>

@@ -38,7 +38,7 @@ function AudienceSelect({ value, onChange }) {
     >
       {AUDIENCES.map((a) => (
         <option key={a.id} value={a.id}>
-          {a.id === "everyone" ? "🌐 " : a.id === "connections" ? "👥 " : "🔒 "}
+          {a.id === "everyone" ? "" : a.id === "connections" ? "" : ""}
           {a.label}
         </option>
       ))}
@@ -262,7 +262,7 @@ export default function ProfileEditor({ uid, email, profile, counts, onSaved, on
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">{isNew ? "Create your profile" : "Edit profile"}</h2>
           <p className="text-sm text-zinc-500">
-            Only your name and username are required. Use the 🌐 / 👥 / 🔒 menus to choose who sees each detail.
+            Only your name and username are required. Use the / / menus to choose who sees each detail.
           </p>
         </div>
         {!isNew && (
@@ -271,7 +271,7 @@ export default function ProfileEditor({ uid, email, profile, counts, onSaved, on
             onClick={() => setPreview("none")}
             className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
           >
-            👁 Preview
+            Preview
           </button>
         )}
       </div>
@@ -460,7 +460,7 @@ export default function ProfileEditor({ uid, email, profile, counts, onSaved, on
           Privacy
           {privacyMsg && <span className="text-xs font-normal text-emerald-400">{privacyMsg}</span>}
         </h3>
-        <p className="mb-3 text-xs text-zinc-500">Your profile and portfolio are never visible to people you haven't approved, unless marked 🌐 Everyone.</p>
+        <p className="mb-3 text-xs text-zinc-500">Your profile and portfolio are never visible to people you haven't approved, unless marked Everyone.</p>
         <div className="space-y-3">
           <Toggle
             on={row.searchable}

@@ -37,3 +37,4 @@ and don't ask them to run commands unless there is no other way.
   share-a-stock modal (`src/ui/share.jsx`), group chat (realtime on group_posts) + group challenge.
   DB: `supabase/003_group_notifications.sql`, `supabase/004_beginners_streaks_chat.sql` (applied).
   Weekly streak = weeks with any activity; the app posts a hidden 'checkin' activity once per week.
+- v4 design (Oct 16): "Ink & Paper" look in `src/index.css`: zinc/blue/emerald utility names are re-pointed via `@theme` to warm neutrals, an orange brand accent and market green; light theme is the default (`html.light` swaps the variables). Fonts: Bricolage Grotesque (headings) + Instrument Sans. Icons: Lucide via `src/ui/icons.jsx` (`<Ic name=...>`); no emoji in the UI except feed reactions. Backup before it: branch `backup-2026-10-16`.

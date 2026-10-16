@@ -40,7 +40,7 @@ function Learn({ onGlossary }) {
   const l = LESSONS[i];
   return (
     <Card
-      title="📚 Learn · tip of the day"
+      title="Learn · tip of the day"
       action={
         <button onClick={() => setI((i + 1) % LESSONS.length)} className="text-xs text-blue-400 hover:underline">
           Next tip →
@@ -50,7 +50,7 @@ function Learn({ onGlossary }) {
       <div className="text-base font-semibold text-zinc-100">{l.title}</div>
       <p className="mt-1 text-sm leading-relaxed text-zinc-300">{l.text}</p>
       <button onClick={onGlossary} className="mt-2 text-xs font-medium text-blue-400 hover:underline">
-        📖 Open the full glossary →
+        Open the full glossary →
       </button>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {LESSONS.map((x, j) => (
@@ -74,7 +74,7 @@ function notifText(n) {
     {
       request: "wants to connect",
       accepted: "accepted your request",
-      joined: "joined with your invite link 🎉",
+      joined: "joined with your invite link ",
       reaction: `reacted ${d.emoji || ""} to your post${sym}`,
       comment: `commented${sym}: “${d.body || ""}”`,
       reply: `also commented${sym}`,
@@ -124,7 +124,7 @@ export default function Home({
       <div>
         <h1 className="text-2xl font-bold text-zinc-50">
           {hello}
-          {name ? `, ${name.split(" ")[0]}` : ""} 👋
+          {name ? `, ${name.split(" ")[0]}` : ""} 
         </h1>
         <p className="text-sm text-zinc-500">Here's what matters today.</p>
       </div>
@@ -159,7 +159,7 @@ export default function Home({
           {/* needs attention */}
           <DigestCard changes={digest.changes} ownedStats={ownedStats} stockInfo={stockInfo} symbols={symbols} onOpenStock={onOpenStock} />
           {firedAlerts.length > 0 && (
-            <Card title="🔔 Price alerts hit">
+            <Card title="Price alerts hit">
               <ul className="space-y-1 text-sm text-zinc-300">
                 {firedAlerts.map((a) => (
                   <li key={a.id}>
@@ -177,7 +177,7 @@ export default function Home({
           <WeeklyRecap uid={uid} ownedStats={ownedStats} watchlist={watchlist} stockData={stockData} benchCandles={benchCandles} ensureSymbols={ensureSymbols} onShared={onToast} />
           {/* notifications */}
           <Card
-            title="🔔 Notifications"
+            title="Notifications"
             action={
               <button onClick={() => onGoSocial("feed")} className="text-xs text-blue-400 hover:underline">
                 Open Social →
@@ -220,7 +220,7 @@ export default function Home({
 
           {/* top picks */}
           <Card
-            title="⭐ Today's top picks"
+            title="Today's top picks"
             action={
               <button onClick={() => onGo("recommendations")} className="text-xs text-blue-400 hover:underline">
                 See all →
@@ -246,7 +246,7 @@ export default function Home({
 
           {/* friends */}
           <Card
-            title="👥 From your friends"
+            title="From your friends"
             action={
               <button onClick={() => onGoSocial("feed")} className="text-xs text-blue-400 hover:underline">
                 See all →
@@ -279,7 +279,7 @@ export function GlossaryPage() {
   ].filter((i) => !q.trim() || (i.title + " " + i.text).toLowerCase().includes(q.trim().toLowerCase()));
   return (
     <div className="mx-auto max-w-3xl space-y-3">
-      <h1 className="text-2xl font-bold text-zinc-50">📖 Learn & glossary</h1>
+      <h1 className="text-2xl font-bold text-zinc-50">Learn & glossary</h1>
       <p className="text-sm text-zinc-400">Every term the app uses, in plain English — plus short lessons for beginners.</p>
       <input
         value={q}
@@ -309,7 +309,7 @@ export function GettingStarted({ steps, onDismiss }) {
   return (
     <section className="rounded-2xl border border-emerald-900/60 bg-gradient-to-br from-emerald-950/40 to-zinc-900 p-4">
       <div className="mb-1 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-zinc-100">🚀 Your first week — {done} of {steps.length} done</h2>
+        <h2 className="text-base font-semibold text-zinc-100">Your first week — {done} of {steps.length} done</h2>
         <button onClick={onDismiss} className="text-xs text-zinc-500 hover:text-zinc-300">Hide</button>
       </div>
       <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-zinc-800">
@@ -401,11 +401,11 @@ export function WeeklyRecap({ uid, ownedStats, watchlist, stockData, benchCandle
     r.best ? `best pick ${r.best.s} (${signed(r.best.m)})` : null,
     r.spy != null ? `S&P 500 ${signed(r.spy)}` : null,
     r.friends ? `beat ${r.beat} of ${r.friends} friends` : null,
-    streak ? `🔥 ${streak}-week streak` : null,
+    streak ? `${streak}-week streak` : null,
   ].filter(Boolean).join(" · ");
 
   async function share() {
-    const text = `📈 ${line} — on Stock Signals`;
+    const text = `${line} — on Stock Signals`;
     try {
       if (navigator.share) await navigator.share({ text });
       else {
@@ -416,7 +416,7 @@ export function WeeklyRecap({ uid, ownedStats, watchlist, stockData, benchCandle
   }
   async function postIt() {
     try {
-      await postActivity(uid, "note", null, {}, `📅 ${line}`);
+      await postActivity(uid, "note", null, {}, `${line}`);
       setPosted(true);
       onShared?.("Posted to your friends' feed");
     } catch (_) {}
@@ -425,8 +425,8 @@ export function WeeklyRecap({ uid, ownedStats, watchlist, stockData, benchCandle
   return (
     <section className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-violet-950/30 to-zinc-900 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">📅 Your week</h2>
-        {streak ? <span className="rounded-full bg-amber-900/40 px-2.5 py-0.5 text-xs font-semibold text-amber-300">🔥 {streak}-week streak</span> : null}
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Your week</h2>
+        {streak ? <span className="rounded-full bg-amber-900/40 px-2.5 py-0.5 text-xs font-semibold text-amber-300">{streak}-week streak</span> : null}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>

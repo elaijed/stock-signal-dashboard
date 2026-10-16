@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Ic, IconToken } from "./ui/icons.jsx";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -1002,10 +1003,10 @@ function runBacktest(candles) {
 // ---------- palette (dashboard commits to a dark finance theme) ----------
 
 const C = {
-  line: "#3987e5", // series-1 blue, dark-surface step
-  grid: "#2c2c2a",
-  up: "#0ca30c",
-  down: "#d03b3b",
+  line: "#ff5b2e", // series-1 blue, dark-surface step
+  grid: "rgba(138,130,120,0.22)",
+  up: "#1fa95a",
+  down: "#dc3b2f",
   muted: "#898781",
 };
 
@@ -1026,7 +1027,7 @@ function signalChipStyle(baseSignal, strong) {
 
 // ---------- components ----------
 
-const CHART_COLORS = { price: C.line, sma20: "#d9a43a", sma50: "#9085e9", volUp: "#1f5f3a", volDown: "#6b2626" };
+const CHART_COLORS = { price: C.line, sma20: "#d9a43a", sma50: "#8a8278", volUp: "rgba(31,169,90,0.35)", volDown: "rgba(220,59,47,0.35)" };
 
 // timeframe → number of trading sessions shown. "Max" = everything fetched (~10 months).
 const TIMEFRAMES = { "1M": 21, "3M": 63, "6M": 126, Max: Infinity };
@@ -1138,7 +1139,7 @@ function MiniChart({ candles, symbol, tall = false }) {
               strokeWidth={2}
               fill={`url(#fill-${symbol})`}
               dot={false}
-              activeDot={{ r: 4, fill: CHART_COLORS.price, stroke: "#1a1a19", strokeWidth: 2 }}
+              activeDot={{ r: 4, fill: CHART_COLORS.price, stroke: "var(--color-zinc-900)", strokeWidth: 2 }}
               isAnimationActive={false}
             />
             <Line
@@ -1687,7 +1688,7 @@ function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, frie
             <span className="rounded-full bg-blue-900/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-blue-300">Owned</span>
             {risk?.breachedStop && (
               <span className="rounded-full border border-red-500 bg-red-800/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-100">
-                ⚠ Below your safety line
+                Below your safety line
               </span>
             )}
             {risk && !risk.breachedStop && risk.hitTarget && (
@@ -1838,7 +1839,7 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
               disabled={!quote}
               className="rounded-lg border border-violet-700 bg-violet-900/30 px-3 py-1.5 text-sm font-medium text-violet-200 hover:bg-violet-900/50 disabled:opacity-40"
             >
-              🎮 Practice buy
+              <Ic name="game" className="mr-1.5" />Practice buy
             </button>
             {!inList ? (
               <button onClick={() => onAdd(symbol)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
@@ -1927,11 +1928,11 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
                       That buys about <span className="font-semibold text-zinc-200">{shares.toFixed(shares < 10 ? 2 : 0)} shares</span> at ${fmt(price)}.
                     </div>
                     <div className="text-zinc-300">
-                      🎯 If it reaches the target (${fmt(target)}):{" "}
+                      <Ic name="target" className="mr-1 text-emerald-500" />If it reaches the target (${fmt(target)}):{" "}
                       <span className="font-semibold text-emerald-400">+${fmt(shares * (target - price))}</span>
                     </div>
                     <div className="text-zinc-300">
-                      🛑 If it falls to the safety line (${fmt(stop)}):{" "}
+                      <Ic name="stop" className="mr-1 text-red-500" />If it falls to the safety line (${fmt(stop)}):{" "}
                       <span className="font-semibold text-red-400">−${fmt(Math.abs(shares * (price - stop)))}</span>
                     </div>
                   </div>
@@ -2032,7 +2033,7 @@ function StockSearch({ apiKey, onOpen }) {
   }
   return (
     <div ref={ref} className="relative w-full sm:w-72">
-      <span className="pointer-events-none absolute left-3 top-2.5 text-sm text-zinc-500">🔍</span>
+      <span className="pointer-events-none absolute left-3 top-2.5 text-sm text-zinc-500"><Ic name="search" /></span>
       <input
         value={q}
         onChange={(e) => {
@@ -2134,26 +2135,26 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
             <div className="truncate text-sm font-semibold text-zinc-100">{profile?.full_name || "Your account"}</div>
             <div className="truncate text-xs text-zinc-500">{email}</div>
             <div className={`mt-1 text-[11px] ${saveStatus === "error" ? "text-red-400" : "text-emerald-500/80"}`}>
-              {saveStatus === "error" ? "⚠ Not saved — check connection" : saveStatus === "saving" ? "Saving…" : "✓ Saved to your account"}
+              {saveStatus === "error" ? "Not saved — check connection" : saveStatus === "saving" ? "Saving…" : "✓ Saved to your account"}
             </div>
           </div>
           <button className={item} onClick={() => (setOpen(false), onProfile())}>
-            👤 My profile
+            <Ic name="user" className="mr-2" />My profile
           </button>
           <button className={item} onClick={() => onTheme(theme === "light" ? "dark" : "light")}>
-            {theme === "light" ? "🌙 Dark mode" : "☀️ Light mode"}
+            <Ic name={theme === "light" ? "moon" : "sun"} className="mr-2" />{theme === "light" ? "Dark mode" : "Light mode"}
           </button>
           <button className={item} onClick={() => (setOpen(false), onSettings())}>
-            ⚙️ Settings (data key)
+            <Ic name="settings" className="mr-2" />Settings (data key)
           </button>
           <button className={item} onClick={() => (setOpen(false), onLearn())}>
-            📖 Learn & glossary
+            <Ic name="book" className="mr-2" />Learn & glossary
           </button>
           <button className={item} onClick={() => (setOpen(false), onWelcome())}>
-            💡 Show welcome tips
+            <Ic name="bulb" className="mr-2" />Show welcome tips
           </button>
           <button className={`${item} border-t border-zinc-800 text-red-300`} onClick={() => (setOpen(false), onLogout())}>
-            ↩ Log out
+            <Ic name="logout" className="mr-2" />Log out
           </button>
         </div>
       )}
@@ -2162,15 +2163,15 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
 }
 
 const NAV = [
-  { id: "home", label: "Home", icon: "🏠" },
-  { id: "watchlist", label: "My Stocks", icon: "📈", also: ["owned"] },
-  { id: "recommendations", label: "Discover", icon: "⭐" },
-  { id: "social", label: "Social", icon: "👥" },
+  { id: "home", label: "Home", icon: "home" },
+  { id: "watchlist", label: "My Stocks", icon: "chart", also: ["owned"] },
+  { id: "recommendations", label: "Discover", icon: "compass" },
+  { id: "social", label: "Social", icon: "users" },
 ];
 
 function BottomNav({ page, onGo, badges }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
       <div className="grid grid-cols-4">
         {NAV.map((t) => (
           <button
@@ -2178,7 +2179,7 @@ function BottomNav({ page, onGo, badges }) {
             onClick={() => onGo(t.id)}
             className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium ${page === t.id || t.also?.includes(page) ? "text-blue-400" : "text-zinc-500"}`}
           >
-            <span className="text-lg leading-none">{t.icon}</span>
+            <Ic name={t.icon} size={22} />
             {t.label}
             {badges[t.id] > 0 && (
               <span className="absolute right-[calc(50%-1.4rem)] top-1.5 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{badges[t.id]}</span>
@@ -2402,7 +2403,7 @@ function AlertChips({ symbol, alerts, onAdd, onDelete, price }) {
             key={al.id}
             className="inline-flex items-center gap-1 rounded-full border border-amber-600/60 bg-amber-900/40 px-2 py-0.5 text-[10px] font-semibold text-amber-200"
           >
-            🔔 Hit: crossed {al.dir} ${fmt(al.price)}
+            <Ic name="bell" className="mr-1" />Hit: crossed {al.dir} ${fmt(al.price)}
             <button onClick={() => onDelete(al.id)} className="ml-0.5 text-amber-300/70 hover:text-amber-100" title="Dismiss">
               ×
             </button>
@@ -2412,7 +2413,7 @@ function AlertChips({ symbol, alerts, onAdd, onDelete, price }) {
             key={al.id}
             className="inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-300"
           >
-            🔔 {al.dir === "above" ? "▲" : "▼"} ${fmt(al.price)}
+            <Ic name="bell" className="mr-1" />{al.dir === "above" ? "▲" : "▼"} ${fmt(al.price)}
             <button onClick={() => onDelete(al.id)} className="ml-0.5 text-zinc-500 hover:text-red-300" title="Remove alert">
               ×
             </button>
@@ -2437,7 +2438,7 @@ function TriggeredAlertsBanner({ alerts, onDismiss }) {
   return (
     <div className="mb-4 rounded-xl border border-amber-700/60 bg-amber-950/40 p-3">
       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-amber-300">
-        🔔 Price alert{hit.length > 1 ? "s" : ""} triggered
+        <Ic name="bell" className="mr-1.5" />Price alert{hit.length > 1 ? "s" : ""} triggered
       </div>
       <ul className="space-y-1">
         {hit.map((al) => (
@@ -2538,7 +2539,7 @@ function PortfolioSummaryBar({ stats }) {
 // ---------- portfolio analytics (Owned page) ----------
 
 // categorical hues in fixed order (dark-surface steps of the reference palette)
-const SECTOR_COLORS = ["#3987e5", "#199e70", "#c98500", "#9085e9", "#e66767", "#d55181", "#d95926", "#008300"];
+const SECTOR_COLORS = ["#ff5b2e", "#2b6f8f", "#d9a43a", "#1fa95a", "#8a8278", "#b5473a", "#5c7a3a", "#c98500"];
 const CONCENTRATION_LIMIT = 40; // % of portfolio in one stock or sector before we flag it
 
 // Sector breakdown by current market value. Sectors come from Finnhub's company
@@ -2561,7 +2562,7 @@ function SectorAllocation({ stats, info, who = "your" }) {
     .map((r, i) => ({
       ...r,
       pct: (r.value / total) * 100,
-      color: r.sector === "Loading…" ? "#52525b" : SECTOR_COLORS[i % SECTOR_COLORS.length],
+      color: r.sector === "Loading…" ? "#a39a8c" : SECTOR_COLORS[i % SECTOR_COLORS.length],
     }));
 
   const topPos = [...priced].sort((a, b) => b.value - a.value)[0];
@@ -2595,7 +2596,7 @@ function SectorAllocation({ stats, info, who = "your" }) {
       </ul>
       {warnings.length > 0 && (
         <div className="mt-3 rounded-md border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
-          ⚠ Concentration: {warnings.join(" ")} Spreading across more stocks/sectors lowers single-name risk.
+          Concentration: {warnings.join(" ")} Spreading across more stocks/sectors lowers single-name risk.
         </div>
       )}
     </div>
@@ -2733,7 +2734,7 @@ function FriendsPicks({ friendsBySymbol, watchlist, onAdd, onOpen }) {
     .slice(0, 8);
   return (
     <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-      <h2 className="mb-1 text-base font-semibold text-zinc-100">👥 Popular with your friends</h2>
+      <h2 className="mb-1 text-base font-semibold text-zinc-100">Popular with your friends</h2>
       <p className="mb-3 text-[11px] text-zinc-500">What your connections own and watch the most (based on what they share).</p>
       {rows.length === 0 ? (
         <div className="rounded-md bg-zinc-800/40 px-3 py-3 text-sm text-zinc-500">Connect with friends on the Social tab to see what they're into.</div>
@@ -3322,9 +3323,9 @@ export default function App() {
   const [incomingCount, setIncomingCount] = useState(0); // pending connection requests (Social tab badge)
   const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem("ssd_theme") || "dark";
+      return localStorage.getItem("ssd_theme") || "light";
     } catch (_) {
-      return "dark";
+      return "light";
     }
   });
   const [myProfile, setMyProfile] = useState(null); // your social profile (avatar in the header)
@@ -3797,7 +3798,7 @@ export default function App() {
     setConnCount(n.connections.length);
   }, []);
 
-  // weekly check-in (keeps your 🔥 streak alive) + first-week checklist state
+  // weekly check-in (keeps your streak alive) + first-week checklist state
   useEffect(() => {
     if (!ready || !userId) return;
     const d = new Date();
@@ -3858,7 +3859,7 @@ export default function App() {
       localStorage.removeItem("ssd_pending_invite");
     } catch (_) {}
     acceptInvite(code)
-      .then((card) => card && card.id !== userId && setToast(`You're now connected with ${card.full_name} 🎉`))
+      .then((card) => card && card.id !== userId && setToast(`You're now connected with ${card.full_name}`))
       .catch((e) => setToast(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId, myProfile?.id]);
@@ -4234,14 +4235,14 @@ export default function App() {
   const stocksSwitch = (
     <div className="mb-4 flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1">
       {[
-        ["watchlist", `👁 Watching (${watching.length})`],
-        ["owned", `💼 Owned (${owned.length})`],
-        ["practice", "🎮 Practice"],
+        ["watchlist", `Watching (${watching.length})`],
+        ["owned", `Owned (${owned.length})`],
+        ["practice", "Practice"],
       ].map(([id, label]) => (
         <button
           key={id}
           onClick={() => goToPage(id)}
-          className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${page === id ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${page === id ? "bg-zinc-100 text-zinc-950" : "text-zinc-400 hover:text-zinc-200"}`}
         >
           {label}
         </button>
@@ -4257,7 +4258,7 @@ export default function App() {
           <div className="mb-3 flex items-center gap-3">
             <button onClick={() => goToPage("home")} className="flex shrink-0 items-center gap-2">
               <img src="./icon.svg" alt="" className="h-8 w-8 rounded-lg" />
-              <span className="hidden text-lg font-bold tracking-tight text-zinc-50 md:inline">Stock Signals</span>
+              <span className="hidden font-display text-xl font-extrabold tracking-tight text-zinc-50 md:inline">signals<span className="text-blue-500">.</span></span>
             </button>
             <div className="min-w-0 flex-1">
               <StockSearch apiKey={apiKey} onOpen={openStock} />
@@ -4283,12 +4284,12 @@ export default function App() {
                 key={tab.id}
                 onClick={() => goToPage(tab.id)}
                 className={`flex-1 min-w-0 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                  page === tab.id || tab.also?.includes(page) ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                  page === tab.id || tab.also?.includes(page) ? "bg-zinc-100 text-zinc-950" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
                 {tab.label}
                 {tab.count != null && tab.count > 0 && (
-                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${page === tab.id ? "bg-blue-500/60" : "bg-zinc-800"}`}>
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${page === tab.id ? "bg-zinc-800 text-zinc-100" : "bg-zinc-800"}`}>
                     {tab.count}
                   </span>
                 )}

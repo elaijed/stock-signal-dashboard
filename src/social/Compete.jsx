@@ -6,7 +6,7 @@ const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() +
 const monthName = (d = new Date()) => d.toLocaleDateString("en-US", { month: "long" });
 const pctStr = (n) => (n == null ? "—" : `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}%`);
 const tone = (n) => (n == null ? "text-zinc-500" : n >= 0 ? "text-emerald-400" : "text-red-400");
-const MEDAL = ["🥇", "🥈", "🥉"];
+const MEDAL = ["1st", "2nd", "3rd"];
 
 function useLivePrices(symbols, ensureSymbols, quoteOf) {
   const key = [...new Set(symbols)].sort().join(",");
@@ -60,7 +60,7 @@ function Leaderboard({ uid, me, setMe, ensureSymbols, quoteOf, onOpenProfile }) 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-zinc-100">🏆 Friends leaderboard</h3>
+        <h3 className="text-base font-semibold text-zinc-100">Friends leaderboard</h3>
         <button
           onClick={toggleOptIn}
           className={`rounded-full px-3 py-1 text-xs font-medium ${optedIn ? "bg-emerald-700/40 text-emerald-200" : "bg-blue-600 text-white hover:bg-blue-500"}`}
@@ -161,7 +161,7 @@ function Challenge({ uid, ensureSymbols, quoteOf, getQuote, onOpenStock, onOpenP
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold text-zinc-100">🏁 {monthName()} pick challenge</h3>
+        <h3 className="text-base font-semibold text-zinc-100">{monthName()} pick challenge</h3>
         <span className="text-xs text-zinc-500">{daysLeft} day{daysLeft === 1 ? "" : "s"} left</span>
       </div>
       <p className="mb-3 text-xs text-zinc-500">
@@ -237,12 +237,12 @@ function PracticeBoard({ me, ensureSymbols, quoteOf, onOpenProfile }) {
     .sort((a, b) => b.ret - a.ret);
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-      <h3 className="mb-1 text-base font-semibold text-zinc-100">🎮 Practice leaderboard</h3>
+      <h3 className="mb-1 text-base font-semibold text-zinc-100">Practice leaderboard</h3>
       <p className="mb-3 text-xs text-zinc-500">Everyone starts with $10,000 of pretend money, so it's a fair race. Friends appear if they joined the leaderboard.</p>
       {!rows ? (
         <div className="text-sm text-zinc-500">Loading…</div>
       ) : ranked.length === 0 ? (
-        <div className="text-sm text-zinc-500">No practice portfolios yet — start one in My Stocks → 🎮 Practice.</div>
+        <div className="text-sm text-zinc-500">No practice portfolios yet — start one in My Stocks → Practice.</div>
       ) : (
         <ol className="space-y-1.5">
           {ranked.map((r, i) => (

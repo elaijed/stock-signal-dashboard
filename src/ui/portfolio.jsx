@@ -1,3 +1,4 @@
+import { IconToken } from "./icons.jsx";
 import React, { useMemo, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from "recharts";
 import { Info } from "./components.jsx";
@@ -78,7 +79,7 @@ export function PerformanceChart({ owned, stockData, benchCandles }) {
               <>Matching the market {label}</>
             ) : diff > 0 ? (
               <>
-                You're <span className="text-emerald-400">beating</span> the market by {Math.abs(diff).toFixed(1)}% {label} 🎉
+                You're <span className="text-emerald-400">beating</span> the market by {Math.abs(diff).toFixed(1)}% {label}
               </>
             ) : (
               <>
@@ -108,21 +109,21 @@ export function PerformanceChart({ owned, stockData, benchCandles }) {
           <LineChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="rgba(127,127,127,0.12)" vertical={false} />
             <XAxis dataKey="day" hide />
-            <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} width={38} tick={{ fontSize: 10, fill: "#71717a" }} axisLine={false} tickLine={false} />
+            <YAxis tickFormatter={(v) => `${v.toFixed(0)}%`} width={38} tick={{ fontSize: 10, fill: "#8a8278" }} axisLine={false} tickLine={false} />
             <ReferenceLine y={0} stroke="rgba(127,127,127,0.35)" />
             <Tooltip
               formatter={(v, k) => [signed(v), k === "you" ? "You" : "S&P 500"]}
               labelFormatter={(d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8, fontSize: 12 }}
+              contentStyle={{ background: "var(--color-zinc-900)", border: "1px solid var(--color-zinc-700)", color: "var(--color-zinc-100)", borderRadius: 8, fontSize: 12 }}
             />
-            <Line type="monotone" dataKey="spy" stroke="#a1a1aa" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="you" stroke="#3987e5" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="spy" stroke="#8a8278" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="you" stroke="#ff5b2e" strokeWidth={2.5} dot={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-1 flex gap-4 text-[11px] text-zinc-500">
         <span>
-          <span className="text-[#3987e5]">━</span> Your stocks
+          <span className="text-[#ff5b2e]">━</span> Your stocks
         </span>
         <span>
           <span className="text-zinc-400">┅</span> S&amp;P 500 (SPY)
@@ -153,15 +154,15 @@ export function TodayStrip({ ownedStats, alerts, breached, incoming, unread, onN
   if (dayPct != null)
     chips.push({
       key: "pf",
-      text: `${dayUsd >= 0 ? "📈" : "📉"} Portfolio ${signed(dayPct)} today (${dayUsd >= 0 ? "+" : "−"}${money(dayUsd, 0)})`,
+      text: `Portfolio ${signed(dayPct)} today (${dayUsd >= 0 ? "+" : "−"}${money(dayUsd, 0)})`,
       tone: dayUsd >= 0 ? "text-emerald-300" : "text-red-300",
       go: "owned",
     });
   if (firedToday.length)
-    chips.push({ key: "al", text: `🔔 ${firedToday.length} alert${firedToday.length === 1 ? "" : "s"} hit (${firedToday.map((a) => a.symbol).join(", ")})`, tone: "text-amber-300", go: "watchlist" });
-  if (breached) chips.push({ key: "br", text: `⚠️ ${breached} position${breached === 1 ? "" : "s"} below the safety line`, tone: "text-red-300", go: "owned" });
-  if (incoming) chips.push({ key: "rq", text: `👥 ${incoming} new request${incoming === 1 ? "" : "s"}`, tone: "text-blue-300", go: "social:requests" });
-  else if (unread) chips.push({ key: "nt", text: `💬 ${unread} new notification${unread === 1 ? "" : "s"}`, tone: "text-blue-300", go: "social:feed" });
+    chips.push({ key: "al", text: `${firedToday.length} alert${firedToday.length === 1 ? "" : "s"} hit (${firedToday.map((a) => a.symbol).join(", ")})`, tone: "text-amber-300", go: "watchlist" });
+  if (breached) chips.push({ key: "br", text: `${breached} position${breached === 1 ? "" : "s"} below the safety line`, tone: "text-red-300", go: "owned" });
+  if (incoming) chips.push({ key: "rq", text: `${incoming} new request${incoming === 1 ? "" : "s"}`, tone: "text-blue-300", go: "social:requests" });
+  else if (unread) chips.push({ key: "nt", text: `${unread} new notification${unread === 1 ? "" : "s"}`, tone: "text-blue-300", go: "social:feed" });
 
   return (
     <div className="mb-4 flex items-center gap-2 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs">
@@ -215,17 +216,17 @@ export function DigestCard({ changes, ownedStats, stockInfo, symbols, onOpenStoc
   const items = [];
   for (const c of changes) {
     const better = (upish(c.to) && !upish(c.from)) || (downish(c.from) && !downish(c.to));
-    items.push({ key: `sig-${c.symbol}`, icon: better ? "🟢" : "🔴", symbol: c.symbol, text: `signal changed from ${c.from} to ${c.to}` });
+    items.push({ key: `sig-${c.symbol}`, icon: better ? "up" : "down", symbol: c.symbol, text: `signal changed from ${c.from} to ${c.to}` });
   }
   for (const s of ownedStats) {
-    if (s.risk?.breachedStop) items.push({ key: `s-${s.item.symbol}`, icon: "⚠️", symbol: s.item.symbol, text: `is below your safety line (${money(s.risk.stop)})` });
-    else if (s.risk?.hitTarget) items.push({ key: `t-${s.item.symbol}`, icon: "🎯", symbol: s.item.symbol, text: `is at your target (${money(s.risk.target)})` });
+    if (s.risk?.breachedStop) items.push({ key: `s-${s.item.symbol}`, icon: "warn", symbol: s.item.symbol, text: `is below your safety line (${money(s.risk.stop)})` });
+    else if (s.risk?.hitTarget) items.push({ key: `t-${s.item.symbol}`, icon: "target", symbol: s.item.symbol, text: `is at your target (${money(s.risk.target)})` });
   }
   for (const sym of symbols) {
     const e = stockInfo[sym]?.earnings?.date;
     if (!e) continue;
     const days = Math.round((new Date(e.slice(0, 10) + "T00:00:00") - new Date(new Date().toDateString())) / 86_400_000);
-    if (days >= 0 && days <= 2) items.push({ key: `e-${sym}`, icon: "📅", symbol: sym, text: `reports earnings ${days === 0 ? "today" : days === 1 ? "tomorrow" : "in 2 days"}` });
+    if (days >= 0 && days <= 2) items.push({ key: `e-${sym}`, icon: "calendar", symbol: sym, text: `reports earnings ${days === 0 ? "today" : days === 1 ? "tomorrow" : "in 2 days"}` });
   }
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
@@ -234,7 +235,7 @@ export function DigestCard({ changes, ownedStats, stockInfo, symbols, onOpenStoc
         <ul className="space-y-1.5">
           {items.slice(0, 8).map((i) => (
             <li key={i.key} className="text-sm text-zinc-300">
-              <span className="mr-1.5">{i.icon}</span>
+              <span className="mr-1.5 text-zinc-500"><IconToken name={i.icon} size={14} /></span>
               <button onClick={() => onOpenStock(i.symbol)} className="font-semibold text-zinc-100 hover:text-blue-300">
                 {i.symbol}
               </button>{" "}
@@ -329,7 +330,7 @@ export function DividendsCard({ ownedStats, stockInfo }) {
 export function Welcome({ hasKey, onAdd, onOpenSettings, busy }) {
   return (
     <section className="mb-6 overflow-hidden rounded-2xl border border-blue-900/60 bg-gradient-to-br from-blue-950/50 via-zinc-900 to-zinc-900 p-5">
-      <h2 className="text-xl font-bold text-zinc-50">Welcome to Stock Signals 👋</h2>
+      <h2 className="text-xl font-bold text-zinc-50">Welcome to Signals</h2>
       <p className="mt-1 max-w-2xl text-sm text-zinc-300">
         This app reads a stock's trend and momentum and tells you, in plain words, whether it looks like a good time to buy, wait or avoid — and
         why.
@@ -355,12 +356,12 @@ export function Welcome({ hasKey, onAdd, onOpenSettings, busy }) {
         <>
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
             {[
-              ["➕", "Add stocks", "Add stocks you're curious about — or tap one below."],
-              ["❓", "Tap “Why?”", "Every signal explains itself with real numbers."],
-              ["👥", "Go social", "Follow friends' portfolios, notes and polls."],
+              ["plus", "Add stocks", "Add stocks you're curious about — or tap one below."],
+              ["help", "Tap “Why?”", "Every signal explains itself with real numbers."],
+              ["users", "Go social", "Follow friends' portfolios, notes and polls."],
             ].map(([i, t, d]) => (
               <div key={t} className="rounded-xl bg-zinc-950/40 p-3">
-                <div className="text-lg">{i}</div>
+                <div className="mb-1 text-blue-500"><IconToken name={i} size={20} /></div>
                 <div className="text-sm font-semibold text-zinc-100">{t}</div>
                 <div className="text-xs text-zinc-400">{d}</div>
               </div>

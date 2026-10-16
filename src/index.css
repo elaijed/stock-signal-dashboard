@@ -1,121 +1,154 @@
 @import "tailwindcss";
 
+/* =====================================================================
+   Design system ("Ink & Paper").
+   The app's markup uses zinc / emerald / blue utility names; here those
+   names are re-pointed at our own palette, so every page picks it up:
+     zinc    -> warm neutrals (paper + ink), light theme is the default
+     blue    -> brand accent ("signal orange")
+     violet  -> brand accent too (no purple)
+     emerald -> price-up green, red -> price-down
+   ===================================================================== */
+@theme {
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.875rem;
+
+  /* dark theme neutrals (warm ink) */
+  --color-zinc-50: #faf7f2;
+  --color-zinc-100: #f1ece4;
+  --color-zinc-200: #e2dcd2;
+  --color-zinc-300: #cbc4b8;
+  --color-zinc-400: #ada597;
+  --color-zinc-500: #8a8278;
+  --color-zinc-600: #5e5850;
+  --color-zinc-700: #3d3832;
+  --color-zinc-800: #2b2723;
+  --color-zinc-900: #1d1b18;
+  --color-zinc-950: #141210;
+
+  /* brand: signal orange */
+  --color-blue-50: #fff3ee;
+  --color-blue-100: #ffe3d6;
+  --color-blue-200: #ffc4ab;
+  --color-blue-300: #ff9f7a;
+  --color-blue-400: #ff7a4d;
+  --color-blue-500: #ff5b2e;
+  --color-blue-600: #f04a1d;
+  --color-blue-700: #c73a14;
+  --color-blue-800: #9c2f13;
+  --color-blue-900: #5c1d0d;
+  --color-blue-950: #2e1007;
+  --color-indigo-500: #ff5b2e;
+  --color-indigo-600: #f04a1d;
+  --color-indigo-700: #c73a14;
+  --color-indigo-800: #9c2f13;
+  --color-violet-300: #ff9f7a;
+  --color-violet-400: #ff7a4d;
+  --color-violet-500: #ff5b2e;
+  --color-violet-600: #f04a1d;
+  --color-violet-700: #c73a14;
+  --color-violet-800: #9c2f13;
+  --color-violet-900: #5c1d0d;
+  --color-violet-950: #2e1007;
+  --color-fuchsia-800: #9c2f13;
+
+  /* price up: a plain market green */
+  --color-emerald-200: #b7ecc9;
+  --color-emerald-300: #7fdca0;
+  --color-emerald-400: #3fc373;
+  --color-emerald-500: #1fa95a;
+  --color-emerald-600: #178a49;
+  --color-emerald-700: #126d3a;
+  --color-emerald-800: #0e532d;
+  --color-emerald-900: #0a3a20;
+  --color-emerald-950: #062213;
+}
+
+/* ---------- light theme (default): paper + ink ---------- */
+html.light {
+  --color-zinc-950: #f6f2eb;  /* page */
+  --color-zinc-900: #fffdf9;  /* surfaces */
+  --color-zinc-800: #ece6dc;  /* subtle fills + borders */
+  --color-zinc-700: #ddd5c8;
+  --color-zinc-600: #a39a8c;
+  --color-zinc-500: #776f64;
+  --color-zinc-400: #5a534a;
+  --color-zinc-300: #403a33;
+  --color-zinc-200: #2b2621;
+  --color-zinc-100: #1a1714;
+  --color-zinc-50: #110f0d;
+
+  --color-blue-200: #c73a14;
+  --color-blue-300: #d9431a;
+  --color-blue-400: #e5471b;
+  --color-blue-800: #ffd2bf;
+  --color-blue-900: #ffe3d6;
+  --color-blue-950: #fff3ee;
+  --color-violet-900: #ffe3d6;
+  --color-violet-950: #fff3ee;
+
+  --color-emerald-200: #0e6b35;
+  --color-emerald-300: #127a3d;
+  --color-emerald-400: #13843f;
+  --color-emerald-500: #178a49;
+  --color-emerald-800: #bfe8cf;
+  --color-emerald-900: #dcf3e5;
+  --color-emerald-950: #eef9f2;
+
+  --color-red-200: #a3221b;
+  --color-red-300: #b52a21;
+  --color-red-400: #c53026;
+  --color-red-800: #f5c9c4;
+  --color-red-900: #fbe1de;
+  --color-red-950: #fdf0ee;
+
+  --color-amber-200: #8a4a07;
+  --color-amber-300: #985209;
+  --color-amber-400: #a85c0b;
+  --color-amber-700: #e8c58e;
+  --color-amber-800: #f3dcb4;
+  --color-amber-900: #f9ead0;
+  --color-amber-950: #fdf5e7;
+}
+html.light input,
+html.light textarea,
+html.light select { color-scheme: light; }
+
 /* ---------- typography ---------- */
 html {
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
 }
 body {
-  background: #09090b;
+  background: var(--color-zinc-950);
+  font-variant-numeric: tabular-nums;
 }
-.font-sans {
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+h1, h2, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
+h1 { font-weight: 700; }
+
+/* No gradients, glows or glass: flat surfaces only. */
+.bg-gradient-to-br, .bg-gradient-to-b, .bg-gradient-to-tr { background-image: none !important; }
+.backdrop-blur { backdrop-filter: none !important; }
+.shadow-md, .shadow-lg, .shadow-xl { box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) !important; }
+::selection { background: #ff5b2e; color: #fff; }
 
 /* ---------- price flash ---------- */
 @keyframes flash-up {
-  0% { background-color: rgba(16, 185, 129, 0.35); }
+  0% { background-color: rgba(31, 169, 90, 0.3); }
   100% { background-color: transparent; }
 }
 @keyframes flash-down {
-  0% { background-color: rgba(239, 68, 68, 0.35); }
+  0% { background-color: rgba(220, 38, 38, 0.3); }
   100% { background-color: transparent; }
 }
 .flash-up { animation: flash-up 1.2s ease-out; }
 .flash-down { animation: flash-down 1.2s ease-out; }
-
-/* ---------- light mode ----------
-   The app is built with dark zinc utility classes; in light mode these
-   unlayered rules (which beat Tailwind's layered utilities) remap them. */
-html.light body { background: #f5f6f8; }
-html.light .bg-zinc-950 { background-color: #f5f6f8; }
-html.light .bg-zinc-950\/95 { background-color: rgba(245, 246, 248, 0.95); }
-html.light .bg-zinc-950\/60,
-html.light .bg-zinc-950\/50,
-html.light .bg-zinc-950\/40 { background-color: #f3f4f6; }
-html.light .bg-zinc-900 { background-color: #ffffff; }
-html.light .bg-zinc-900\/60 { background-color: rgba(255, 255, 255, 0.8); }
-html.light .bg-zinc-800 { background-color: #eef0f3; }
-html.light .bg-zinc-800\/80,
-html.light .bg-zinc-800\/70,
-html.light .bg-zinc-800\/60,
-html.light .bg-zinc-800\/50,
-html.light .bg-zinc-800\/40 { background-color: #f1f3f5; }
-html.light .bg-zinc-700,
-html.light .bg-zinc-700\/70 { background-color: #e2e5e9; }
-html.light .bg-zinc-600 { background-color: #d4d8dd; }
-html.light .hover\:bg-zinc-800:hover,
-html.light .hover\:bg-zinc-800\/50:hover { background-color: #eef0f3; }
-html.light .hover\:bg-zinc-900:hover { background-color: #f3f4f6; }
-html.light .hover\:bg-zinc-700:hover,
-html.light .hover\:bg-zinc-600:hover { background-color: #e2e5e9; }
-
-html.light .border-zinc-900 { border-color: #eceef1; }
-html.light .border-zinc-800,
-html.light .border-zinc-800\/60 { border-color: #e4e7eb; }
-html.light .border-zinc-700 { border-color: #d4d8dd; }
-html.light .border-zinc-600 { border-color: #c4c9cf; }
-html.light .divide-zinc-800 > :not(:last-child) { border-color: #e4e7eb; }
-html.light .hover\:border-zinc-700:hover,
-html.light .hover\:border-zinc-600:hover,
-html.light .hover\:border-zinc-500:hover { border-color: #c4c9cf; }
-
-html.light .text-zinc-50,
-html.light .text-zinc-100 { color: #111827; }
-html.light .text-zinc-200 { color: #1f2937; }
-html.light .text-zinc-300 { color: #374151; }
-html.light .text-zinc-400 { color: #4b5563; }
-html.light .text-zinc-500 { color: #6b7280; }
-html.light .text-zinc-600 { color: #9ca3af; }
-html.light .hover\:text-zinc-100:hover,
-html.light .hover\:text-zinc-200:hover,
-html.light .hover\:text-zinc-300:hover { color: #111827; }
-
-html.light .text-emerald-200,
-html.light .text-emerald-300,
-html.light .text-emerald-400,
-html.light .text-emerald-500,
-html.light .text-emerald-500\/80 { color: #047857; }
-html.light .text-red-200,
-html.light .text-red-300,
-html.light .text-red-400 { color: #b91c1c; }
-html.light .text-amber-200,
-html.light .text-amber-300,
-html.light .text-amber-400 { color: #b45309; }
-html.light .text-blue-200,
-html.light .text-blue-300,
-html.light .text-blue-400 { color: #1d4ed8; }
-html.light .text-blue-300\/70 { color: #2563eb; }
-html.light .hover\:text-blue-300:hover,
-html.light .hover\:text-blue-400:hover { color: #1d4ed8; }
-
-html.light .bg-emerald-800\/60,
-html.light .bg-emerald-900\/40,
-html.light .bg-emerald-900\/30,
-html.light .bg-emerald-700\/40,
-html.light .bg-emerald-600\/20 { background-color: #d1fae5; }
-html.light .bg-red-800\/60,
-html.light .bg-red-900\/30,
-html.light .bg-red-950\/30,
-html.light .bg-red-600\/20 { background-color: #fee2e2; }
-html.light .bg-amber-900\/40,
-html.light .bg-amber-900\/20,
-html.light .bg-amber-900\/20,
-html.light .bg-amber-950\/30 { background-color: #fef3c7; }
-html.light .bg-blue-950\/30,
-html.light .bg-blue-950\/20,
-html.light .bg-blue-950\/40,
-html.light .bg-blue-900\/50,
-html.light .bg-blue-600\/20 { background-color: #dbeafe; }
-html.light .border-blue-900\/60,
-html.light .border-blue-800\/60 { border-color: #bfdbfe; }
-html.light .from-blue-950\/50,
-html.light .from-blue-950\/40 { --tw-gradient-from: #dbeafe; }
-html.light .via-zinc-900,
-html.light .to-zinc-900 { --tw-gradient-to: #ffffff; --tw-gradient-via: #ffffff; }
-html.light .ring-zinc-900,
-html.light .ring-zinc-950 { --tw-ring-color: #ffffff; }
-html.light input,
-html.light textarea,
-html.light select { color-scheme: light; }
-html.light .shadow-md { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04); }

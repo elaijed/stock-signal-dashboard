@@ -1,3 +1,4 @@
+import { Ic } from "../ui/icons.jsx";
 import React, { useEffect, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import { BANNERS, EXPERIENCE, RISK, LINKS, safeUrl } from "./constants.js";
@@ -7,17 +8,17 @@ import { sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, report
 export function badgeList(b) {
   if (!b) return [];
   const out = [];
-  if (b.streak >= 2) out.push(["🔥", `${b.streak}-week streak`, "Active every week in a row"]);
-  if (b.member_since && new Date(b.member_since) < new Date("2027-01-01")) out.push(["🌱", "Early member", "Joined in the first months"]);
-  if (b.targets >= 5) out.push(["🎯", "Sharpshooter", `Hit ${b.targets} targets`]);
-  else if (b.targets >= 1) out.push(["🎯", "On target", "Hit a price target"]);
-  if (b.wins >= 3) out.push(["💰", "Profit taker", `${b.wins} winning trades`]);
-  if (b.notes >= 10) out.push(["🧠", "Thinker", `Wrote ${b.notes} trade notes`]);
-  else if (b.notes >= 1) out.push(["✍️", "Explainer", "Shared why they traded"]);
-  if (b.connections >= 5) out.push(["🤝", "Connector", `${b.connections} connections`]);
-  if (b.polls >= 3) out.push(["🗳", "Pollster", `Ran ${b.polls} polls`]);
-  if (b.challenges >= 1) out.push(["🏁", "Challenger", `Entered ${b.challenges} monthly challenge${b.challenges === 1 ? "" : "s"}`]);
-  if (b.trades >= 10) out.push(["📈", "Active trader", `${b.trades} trades logged`]);
+  if (b.streak >= 2) out.push(["flame", `${b.streak}-week streak`, "Active every week in a row"]);
+  if (b.member_since && new Date(b.member_since) < new Date("2027-01-01")) out.push(["sprout", "Early member", "Joined in the first months"]);
+  if (b.targets >= 5) out.push(["target", "Sharpshooter", `Hit ${b.targets} targets`]);
+  else if (b.targets >= 1) out.push(["target", "On target", "Hit a price target"]);
+  if (b.wins >= 3) out.push(["coins", "Profit taker", `${b.wins} winning trades`]);
+  if (b.notes >= 10) out.push(["brain", "Thinker", `Wrote ${b.notes} trade notes`]);
+  else if (b.notes >= 1) out.push(["pen", "Explainer", "Shared why they traded"]);
+  if (b.connections >= 5) out.push(["handshake", "Connector", `${b.connections} connections`]);
+  if (b.polls >= 3) out.push(["poll", "Pollster", `Ran ${b.polls} polls`]);
+  if (b.challenges >= 1) out.push(["flag", "Challenger", `Entered ${b.challenges} monthly challenge${b.challenges === 1 ? "" : "s"}`]);
+  if (b.trades >= 10) out.push(["up", "Active trader", `${b.trades} trades logged`]);
   return out;
 }
 
@@ -34,7 +35,7 @@ function Badges({ uid }) {
       <div className="flex flex-wrap gap-1.5">
         {list.map(([icon, name, hint]) => (
           <span key={name} title={hint} className="rounded-full border border-amber-700/50 bg-amber-900/20 px-2.5 py-1 text-xs text-amber-200">
-            {icon} {name}
+            <Ic name={icon} size={13} className="mr-1" />{name}
           </span>
         ))}
       </div>
@@ -51,7 +52,7 @@ function Chip({ children }) {
 function Row({ icon, children }) {
   return (
     <div className="flex items-start gap-2 text-sm text-zinc-300">
-      <span className="w-5 shrink-0 text-center text-zinc-500">{icon}</span>
+      <span className="w-5 shrink-0 text-center text-zinc-500"><Ic name={icon} /></span>
       <span className="min-w-0">{children}</span>
     </div>
   );
@@ -270,16 +271,16 @@ export default function ProfileView({ profile: p, myId, hasMyProfile, preview, o
           {p.bio && <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-zinc-300">{p.bio}</p>}
 
           <div className="mt-4 space-y-1.5">
-            {work && <Row icon="💼">{work}{p.industry ? <span className="text-zinc-500"> · {p.industry}</span> : null}</Row>}
-            {!work && p.industry && <Row icon="💼">{p.industry}</Row>}
+            {work && <Row icon="briefcase">{work}{p.industry ? <span className="text-zinc-500"> · {p.industry}</span> : null}</Row>}
+            {!work && p.industry && <Row icon="briefcase">{p.industry}</Row>}
             {school && (
-              <Row icon="🎓">
+              <Row icon="cap">
                 {school}
                 {p.grad_year ? <span className="text-zinc-500"> · {p.grad_year}</span> : null}
               </Row>
             )}
-            {p.location && <Row icon="📍">{p.location}</Row>}
-            {since && <Row icon="🗓">Member since {since}</Row>}
+            {p.location && <Row icon="pin">{p.location}</Row>}
+            {since && <Row icon="calendar">Member since {since}</Row>}
           </div>
 
           {!!(p.experience_level || (p.years_investing ?? "") !== "" || p.risk_tolerance || p.styles?.length || p.sectors?.length) && (

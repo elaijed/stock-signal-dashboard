@@ -1,3 +1,4 @@
+import { Ic } from "../ui/icons.jsx";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import ProfileView from "./ProfileView.jsx";
@@ -59,7 +60,7 @@ function InviteBox({ me, apiKey }) {
   }
   return (
     <div className="rounded-xl border border-blue-900/60 bg-blue-950/20 p-3">
-      <div className="text-sm font-semibold text-blue-200">📨 Invite friends</div>
+      <div className="text-sm font-semibold text-blue-200">Invite friends</div>
       <div className="mb-2 text-xs text-blue-300/70">Anyone who signs up with your link is connected with you automatically.</div>
       <div className="flex gap-2">
         <input readOnly value={link} onFocus={(e) => e.target.select()} className="min-w-0 flex-1 truncate rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300" />
@@ -201,7 +202,7 @@ export default function SocialPage({
       <div className="mx-auto max-w-3xl">
         {me === null && (
           <div className="mb-4 rounded-xl border border-blue-900/60 bg-blue-950/30 p-4 text-sm text-blue-200">
-            <div className="font-semibold">Welcome to Social 👋</div>
+            <div className="font-semibold">Welcome to Social </div>
             Create a profile to find friends, connect, and see each other's portfolios. You choose exactly what's shared — nothing is
             visible to anyone until you allow it.
           </div>
@@ -255,7 +256,7 @@ export default function SocialPage({
               </>
             ) : (
               <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-center text-sm text-zinc-500">
-                🔒 Connect with {opened.full_name.split(" ")[0]} to see their portfolio.
+                Connect with {opened.full_name.split(" ")[0]} to see their portfolio.
               </div>
             )}
           </ProfileView>
@@ -289,7 +290,7 @@ export default function SocialPage({
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`shrink-0 grow whitespace-nowrap rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
-              tab === t.id ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"
+              tab === t.id ? "bg-zinc-100 text-zinc-950" : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
             {t.label}
@@ -353,7 +354,7 @@ export default function SocialPage({
         <div className="space-y-4">
           <InviteBox me={me} apiKey={apiKey} />
           <div className="relative">
-            <span className="absolute left-3 top-2.5 text-zinc-500">🔍</span>
+            <span className="absolute left-3 top-2.5 text-zinc-500"><Ic name="search" /></span>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}

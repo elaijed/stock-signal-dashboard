@@ -12,7 +12,7 @@ function text(n) {
     case "accepted":
       return "accepted your connection request";
     case "joined":
-      return "joined through your invite link — you're now connected 🎉";
+      return "joined through your invite link — you're now connected ";
     case "reaction":
       return `reacted ${d.emoji || ""} to your post${sym}`;
     case "comment":
@@ -20,7 +20,7 @@ function text(n) {
     case "reply":
       return `also commented${sym}: “${d.body || ""}”`;
     case "vote":
-      return `voted ${d.choice === "bull" ? "🐂 bullish" : "🐻 bearish"} on your poll${sym}`;
+      return `voted ${d.choice === "bull" ? "bullish" : "bearish"} on your poll${sym}`;
     case "share":
       return `shared ${d.symbol || "a stock"} with you${d.note ? `: “${d.note}”` : ""}`;
     case "group_post":

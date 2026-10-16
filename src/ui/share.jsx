@@ -39,8 +39,8 @@ export default function ShareModal({ open, uid, symbol, onClose, onDone }) {
     setErr(null);
     try {
       for (const f of pickedF) await shareStock(f, symbol, note);
-      for (const g of pickedG) await addGroupPostWithSymbol(uid, g, note.trim() || `Check out ${symbol} 👀`, symbol);
-      if (toFeed) await postActivity(uid, "note", symbol, {}, note.trim() || `Watching ${symbol} 👀`);
+      for (const g of pickedG) await addGroupPostWithSymbol(uid, g, note.trim() || `Check out ${symbol} `, symbol);
+      if (toFeed) await postActivity(uid, "note", symbol, {}, note.trim() || `Watching ${symbol} `);
       onDone?.(`Shared ${symbol}`);
       onClose();
     } catch (e) {
@@ -76,7 +76,7 @@ export default function ShareModal({ open, uid, symbol, onClose, onDone }) {
         />
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
           <label className={row(toFeed)}>
-            <input type="checkbox" checked={toFeed} onChange={(e) => setToFeed(e.target.checked)} /> 📣 Post to my feed
+            <input type="checkbox" checked={toFeed} onChange={(e) => setToFeed(e.target.checked)} /> Post to my feed
           </label>
           {groups.length > 0 && (
             <div>
@@ -110,7 +110,7 @@ export default function ShareModal({ open, uid, symbol, onClose, onDone }) {
         {err && <div className="mt-2 text-xs text-red-400">{err}</div>}
         <div className="mt-4 flex items-center justify-between gap-2">
           <button onClick={copy} className="text-xs text-zinc-400 hover:text-zinc-200">
-            {copied ? "Link copied ✓" : "🔗 Copy link"}
+            {copied ? "Link copied ✓" : "Copy link"}
           </button>
           <span className="flex gap-2">
             <button onClick={onClose} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800">

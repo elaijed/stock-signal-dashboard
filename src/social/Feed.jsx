@@ -56,14 +56,14 @@ function Headline({ it, onOpenStock }) {
     case "target":
       return (
         <>
-          🎯 {s} hit the target{d.target != null && <> ({money(d.target)})</>}
+          {s} hit the target{d.target != null && <> ({money(d.target)})</>}
           {d.gainPct != null && <span className="text-emerald-400"> · {signedPct(d.gainPct)}</span>}
         </>
       );
     case "stop":
       return (
         <>
-          ⚠️ {s} fell below the safety line{d.stop != null && <> ({money(d.stop)})</>}
+          {s} fell below the safety line{d.stop != null && <> ({money(d.stop)})</>}
         </>
       );
     case "note":
@@ -73,7 +73,7 @@ function Headline({ it, onOpenStock }) {
     case "challenge":
       return (
         <>
-          🏁 joined this month's challenge with{" "}
+          joined this month's challenge with{" "}
           {(d.symbols || []).map((x, i) => (
             <span key={x}>
               {i > 0 && ", "}
@@ -100,8 +100,8 @@ function PollBox({ it, uid, onChanged }) {
       <div className="mb-2 text-sm font-medium text-zinc-100">{it.data?.question || `Bullish or bearish on ${it.symbol}?`}</div>
       <div className="flex gap-2">
         {[
-          ["bull", "🐂 Bullish", "border-emerald-600 bg-emerald-600/20 text-emerald-200"],
-          ["bear", "🐻 Bearish", "border-red-600 bg-red-600/20 text-red-200"],
+          ["bull", "Bullish", "border-emerald-600 bg-emerald-600/20 text-emerald-200"],
+          ["bear", "Bearish", "border-red-600 bg-red-600/20 text-red-200"],
         ].map(([c, label, on]) => (
           <button
             key={c}
@@ -195,7 +195,7 @@ export function FeedItem({ it, uid, onChanged, onOpenStock, onOpenProfile }) {
               );
             })}
             <button onClick={() => setShowComments((s) => !s)} className="ml-1 text-xs text-zinc-500 hover:text-zinc-300">
-              💬 {it.comments.length ? `${it.comments.length} comment${it.comments.length === 1 ? "" : "s"}` : "Comment"}
+              {it.comments.length ? `${it.comments.length} comment${it.comments.length === 1 ? "" : "s"}` : "Comment"}
             </button>
             {it.mine && (
               <span className="relative ml-auto">
@@ -302,13 +302,13 @@ export function Composer({ uid, onPosted, defaultSymbol = "", defaultMode = "not
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
       <div className="mb-2 flex gap-1">
         {[
-          ["note", "✍️ Share a thought"],
-          ["poll", "🗳 Ask a poll"],
+          ["note", "Share a thought"],
+          ["poll", "Ask a poll"],
         ].map(([m, l]) => (
           <button
             key={m}
             onClick={() => setMode(m)}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium ${mode === m ? "bg-zinc-700 text-white" : "text-zinc-400 hover:text-zinc-200"}`}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium ${mode === m ? "bg-zinc-100 text-zinc-950" : "text-zinc-400 hover:text-zinc-200"}`}
           >
             {l}
           </button>

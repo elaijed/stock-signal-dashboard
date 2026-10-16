@@ -1,3 +1,4 @@
+import { Ic } from "./icons.jsx";
 import React, { useEffect, useState } from "react";
 import { Info } from "./components.jsx";
 
@@ -57,7 +58,7 @@ export function PracticeTradeModal({ open, side, symbol, price, paper, onConfirm
     <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-semibold text-zinc-100">
-          🎮 Practice {side === "buy" ? "buy" : "sell"} {symbol}
+          Practice {side === "buy" ? "buy" : "sell"} {symbol}
         </h2>
         <p className="mb-3 text-sm text-zinc-400">
           Pretend money — no real trade happens. Price now: <span className="font-semibold text-zinc-200">{price ? money(price) : "…"}</span>
@@ -67,7 +68,7 @@ export function PracticeTradeModal({ open, side, symbol, price, paper, onConfirm
             ["dollars", "In dollars"],
             ["shares", "In shares"],
           ].map(([m, l]) => (
-            <button key={m} onClick={() => setMode(m)} className={`flex-1 rounded-md py-1.5 ${mode === m ? "bg-zinc-600 text-white" : "text-zinc-400"}`}>
+            <button key={m} onClick={() => setMode(m)} className={`flex-1 rounded-md py-1.5 ${mode === m ? "bg-zinc-100 text-zinc-950" : "text-zinc-400"}`}>
               {l}
             </button>
           ))}
@@ -126,7 +127,7 @@ export function PracticePage({ paper, stockData, ensureSymbols, onTrade, onReset
   if (!paper) {
     return (
       <section className="rounded-2xl border border-blue-900/60 bg-gradient-to-br from-blue-950/40 to-zinc-900 p-6 text-center">
-        <div className="text-4xl">🎮</div>
+        <div className="text-blue-500"><Ic name="game" size={36} /></div>
         <h2 className="mt-2 text-xl font-bold text-zinc-50">Practice with $10,000 of pretend money</h2>
         <p className="mx-auto mt-1 max-w-md text-sm text-zinc-300">
           Try buying and selling real stocks at real prices — without risking anything. Great for learning, and you can compare with friends on the practice
@@ -167,12 +168,12 @@ export function PracticePage({ paper, stockData, ensureSymbols, onTrade, onReset
         </div>
       </section>
       <p className="text-xs text-zinc-500">
-        Pretend money only. To practice-buy, open any stock (search at the top, or tap a stock anywhere) and press <b>🎮 Practice buy</b>.
+        Pretend money only. To practice-buy, open any stock (search at the top, or tap a stock anywhere) and press <b>Practice buy</b>.
       </p>
 
       {paper.positions.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">
-          No practice positions yet. Search a stock at the top and tap “🎮 Practice buy”.
+          No practice positions yet. Search a stock at the top and tap “Practice buy”.
         </div>
       ) : (
         <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
