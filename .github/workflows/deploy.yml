@@ -1,5 +1,8 @@
 # Builds the dashboard and publishes it to GitHub Pages.
-# Runs on every push, twice each weekday (to refresh chart data), or by hand.
+# Runs on every push to main, twice each weekday (to refresh chart data), or by hand.
+# The live site is built from `main`. If a `preview` branch exists, it is built too
+# and published under /preview/ so new versions can be tried before going live
+# (after pushing to `preview`, run this workflow by hand to refresh it).
 name: Deploy to GitHub Pages
 
 on:
@@ -27,6 +30,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,7 +39,26 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Fetch daily chart data
         run: node scripts/fetch-candles.mjs
+      - name: Work out the signals' track record
+        run: if [ -f scripts/track-record.mjs ]; then node scripts/track-record.mjs; fi
       - run: npm run build
+      - name: Check for a preview branch
+        id: preview
+        run: |
+          if git ls-remote --exit-code --heads origin preview >/dev/null; then echo "exists=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.preview.outputs.exists == 'true'
+        with:
+          ref: preview
+          path: preview-src
+      - name: Build the preview under /preview/
+        if: steps.preview.outputs.exists == 'true'
+        working-directory: preview-src
+        run: |
+          npm ci --no-audit --no-fund
+          mkdir -p public && cp -r ../public/candles public/
+          if [ -f scripts/track-record.mjs ]; then node scripts/track-record.mjs; fi
+          npx vite build --outDir ../dist/preview --emptyOutDir
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
