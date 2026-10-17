@@ -19,6 +19,9 @@ const FEED_MODES = [
   { id: "friends", label: "Friends" },
 ];
 
+// remembered between visits so switching tabs doesn't flash "Loading…"
+const cache = { uid: null, me: undefined, network: null };
+
 function routeSection(t) {
   if (!t) return null;
   if (DISCOVER_TABS.includes(t)) return "discover";
@@ -34,9 +37,9 @@ export default function SocialPage({
   const [groupRoute, setGroupRoute] = useState(null);
   const [postId, setPostId] = useState(null);
   const [openId, setOpenId] = useState(null);
-  const [me, setMe] = useState(undefined); // undefined = loading, null = no profile yet
+  const [me, setMe] = useState(cache.uid === uid ? cache.me : undefined); // undefined = loading, null = no profile yet
   const [editing, setEditing] = useState(false);
-  const [network, setNetwork] = useState(null);
+  const [network, setNetwork] = useState(cache.uid === uid ? cache.network : null);
   const [composer, setComposer] = useState(null); // null | "post" | "poll"
   const [feedKey, setFeedKey] = useState(0);
   const [toastNode, toast] = useToast();
@@ -49,6 +52,7 @@ export default function SocialPage({
   const refreshNetwork = useCallback(async () => {
     try {
       const n = await myNetwork();
+      cache.network = n;
       setNetwork(n);
       onNetworkRef.current?.(n);
     } catch (_) {
@@ -57,14 +61,16 @@ export default function SocialPage({
   }, []);
 
   const updateMe = useCallback((p) => {
+    cache.uid = uid;
+    cache.me = p;
     setMe(p);
     onProfileRef.current?.(p);
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
     loadMyProfile(uid)
       .then(updateMe)
-      .catch(() => setMe(null));
+      .catch(() => setMe((m) => (m === undefined ? null : m)));
     refreshNetwork();
   }, [uid, refreshNetwork, updateMe]);
 

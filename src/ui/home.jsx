@@ -240,7 +240,7 @@ export default function Home({
                 ))}
               </ul>
             ) : (
-              <div className="text-sm text-zinc-500">Today's picks are being prepared — check Discover in a minute.</div>
+              <div className="text-sm text-zinc-500">Today's picks are being prepared — check Top Picks in a minute.</div>
             )}
           </Card>
 

@@ -1473,15 +1473,17 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
   const pe = m?.peTTM ?? m?.peBasicExclExtraTTM;
   const cap = info?.profile?.marketCapitalization;
 
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
+    const onKey = (e) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-zinc-950/95 backdrop-blur-sm">
@@ -1881,7 +1883,7 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
 const NAV = [
   { id: "home", label: "Home", icon: "home" },
   { id: "watchlist", label: "My Stocks", icon: "chart", also: ["owned"] },
-  { id: "recommendations", label: "Discover", icon: "compass" },
+  { id: "recommendations", label: "Top Picks", icon: "trophy" },
   { id: "social", label: "Social", icon: "users" },
 ];
 
@@ -3928,7 +3930,7 @@ export default function App() {
   const tabs = [
     { id: "home", label: "Home", count: null },
     { id: "watchlist", label: "My Stocks", count: watchlist.length, also: ["owned", "practice"] },
-    { id: "recommendations", label: "Discover", count: null },
+    { id: "recommendations", label: "Top Picks", count: null },
     { id: "social", label: "Social", count: null, badge: incomingCount },
   ];
   // Watching / Owned switch shown at the top of My Stocks
@@ -4145,7 +4147,7 @@ export default function App() {
                 <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
                   Nothing on your watchlist right now. Add a stock above, or check{" "}
                   <button onClick={() => goToPage("recommendations")} className="text-blue-400 hover:underline">
-                    Discover
+                    Top Picks
                   </button>{" "}
                   for ideas.
                 </div>

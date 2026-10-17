@@ -161,12 +161,15 @@ export function useToast() {
 // ---------- sheet: bottom sheet on phones; centered modal or side panel on desktop ----------
 export function Sheet({ open, onClose, title, children, footer, variant = "modal", wide = false }) {
   const [shown, setShown] = useState(false);
+  // keep the latest onClose without re-running the open animation on every parent render
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const r = requestAnimationFrame(() => setShown(true));
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e) => e.key === "Escape" && onClose?.();
+    const onKey = (e) => e.key === "Escape" && closeRef.current?.();
     window.addEventListener("keydown", onKey);
     return () => {
       cancelAnimationFrame(r);
@@ -174,7 +177,7 @@ export function Sheet({ open, onClose, title, children, footer, variant = "modal
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   const panel = variant === "panel";
   return (

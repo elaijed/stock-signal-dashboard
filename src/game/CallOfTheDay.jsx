@@ -45,6 +45,7 @@ function StreakChip({ n }) {
 }
 
 function CrowdBar({ crowd, mine }) {
+  if (crowd === null) return <div className="h-[46px] animate-pulse rounded-lg bg-zinc-800/40" />;
   const up = crowd?.up || 0, down = crowd?.down || 0, total = up + down;
   if (!total) return <p className="text-xs text-zinc-500">You're one of the first to call this one.</p>;
   const upPct = Math.round((up / total) * 100);
@@ -203,7 +204,7 @@ export default function CallOfTheDay({ uid, ensureSymbols, stockData = {}, onOpe
 
   // crowd split once I've called
   const loadCrowd = useCallback(() => {
-    api.callCrowd(callDay).then(setCrowd).catch(() => setCrowd(null));
+    api.callCrowd(callDay).then(setCrowd).catch(() => setCrowd({ up: 0, down: 0 }));
   }, [api, callDay]);
   useEffect(() => {
     if (myCall) loadCrowd();
@@ -309,7 +310,7 @@ export default function CallOfTheDay({ uid, ensureSymbols, stockData = {}, onOpe
         </div>
         <div className="flex shrink-0 flex-col items-end">
           <Sparkline candles={d?.candles} />
-          {d?.candles?.length > 3 && <span className="text-[10px] text-zinc-600">last month</span>}
+          <span className="h-3.5 text-[10px] text-zinc-600">{d?.candles?.length > 3 ? "last month" : ""}</span>
         </div>
       </button>
 

@@ -56,7 +56,7 @@ export function Burst({ count = 22 }) {
 
 export function Sparkline({ candles, width = 120, height = 36, className = "" }) {
   const pts = (candles || []).filter((c) => c?.close != null).slice(-22);
-  if (pts.length < 3) return null;
+  if (pts.length < 3) return <div style={{ width, height }} className={`animate-pulse rounded-md bg-zinc-800/40 ${className}`} aria-hidden="true" />;
   const vals = pts.map((c) => c.close);
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const span = hi - lo || 1;

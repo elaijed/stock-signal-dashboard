@@ -22,9 +22,13 @@ export async function fetchFeed({ mode = "friends", before = null, limit = 20, u
   }
 }
 
+// last loaded page per feed, so coming back shows posts instantly and refreshes quietly
+const feedCache = new Map();
+
 export function FeedList({ mode = "friends", symbol = null, user = null, limit = 15, paging = true, reloadKey = 0, pinned = null, empty = null, onLoaded }) {
-  const { ensureSymbols } = useSocial();
-  const [items, setItems] = useState(null);
+  const { ensureSymbols, uid } = useSocial();
+  const cacheKey = `${uid}|${mode}|${symbol}|${user}|${limit}`;
+  const [items, setItems] = useState(() => feedCache.get(cacheKey) ?? null);
   const [more, setMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState(null);
@@ -33,6 +37,7 @@ export function FeedList({ mode = "friends", symbol = null, user = null, limit =
     setErr(null);
     try {
       const list = await fetchFeed({ mode, limit, symbol, user });
+      feedCache.set(cacheKey, list);
       setItems(list);
       setMore(list.length >= limit);
       onLoaded?.(list);
@@ -41,12 +46,12 @@ export function FeedList({ mode = "friends", symbol = null, user = null, limit =
       setItems([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, limit, symbol, user]);
+  }, [mode, limit, symbol, user, cacheKey]);
 
   useEffect(() => {
-    setItems(null);
+    setItems(feedCache.get(cacheKey) ?? null);
     load();
-  }, [load, reloadKey]);
+  }, [load, reloadKey, cacheKey]);
 
   async function loadMore() {
     if (loadingMore || !items?.length) return;
