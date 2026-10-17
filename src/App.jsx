@@ -1455,7 +1455,7 @@ function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, frie
 }
 
 // Full-screen stock page: big chart, the reasoning, what-if, friends, polls, news
-function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile, onPractice, onShare }) {
+function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile, onPractice, onShare, quoteOf, getQuote, ensureSymbols }) {
   const quote = data?.quote;
   const candles = data?.candles;
   const a = candles ? analyze(candles, quote, item || { symbol, status: "watching" }) : null;
@@ -1642,10 +1642,66 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
         {/* friends' polls and notes about this stock */}
         <section className="mt-6">
           <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">What your friends think about {symbol}</div>
-          <Feed uid={uid} symbol={symbol} limit={10} onOpenStock={() => {}} onOpenProfile={onOpenProfile}
+          <Feed uid={uid} symbol={symbol} limit={10} onOpenStock={() => {}} onOpenProfile={onOpenProfile} quoteOf={quoteOf} getQuote={getQuote} ensureSymbols={ensureSymbols}
             emptyText={`No posts about ${symbol} yet. Ask your friends what they think with a poll above.`} />
         </section>
         <p className="mt-6 text-center text-[11px] text-zinc-600">Educational tool only, not financial advice.</p>
+      </div>
+    </div>
+  );
+}
+
+// Shown after opening a password-reset link: Supabase signs you in and asks for a new password
+function NewPasswordScreen({ email, onDone }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+  async function save(e) {
+    e.preventDefault();
+    setError(null);
+    if (pw.length < 8) return setError("Use at least 8 characters.");
+    if (pw !== pw2) return setError("The two passwords don't match.");
+    setBusy(true);
+    const { error: err } = await supabase.auth.updateUser({ password: pw });
+    setBusy(false);
+    if (err) setError(err.message);
+    else {
+      setDone(true);
+      try {
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      } catch (_) {}
+    }
+  }
+  const input = "w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-blue-500";
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <img src="./icon.svg" alt="" className="mb-4 h-10 w-10 rounded-lg" />
+        {done ? (
+          <>
+            <h1 className="font-display text-2xl font-bold text-zinc-50">Password updated</h1>
+            <p className="mt-2 text-sm text-zinc-400">You're signed in. Use your new password next time you log in.</p>
+            <button onClick={onDone} className="mt-5 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">
+              Continue
+            </button>
+          </>
+        ) : (
+          <form onSubmit={save} className="space-y-3">
+            <h1 className="font-display text-2xl font-bold text-zinc-50">Choose a new password</h1>
+            <p className="text-sm text-zinc-400">For {email}</p>
+            <input type="password" autoComplete="new-password" placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} className={input} autoFocus />
+            <input type="password" autoComplete="new-password" placeholder="Type it again" value={pw2} onChange={(e) => setPw2(e.target.value)} className={input} />
+            {error && <div className="text-sm text-red-400">{error}</div>}
+            <button disabled={busy} className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
+              {busy ? "Saving…" : "Save new password"}
+            </button>
+            <button type="button" onClick={onDone} className="w-full py-1 text-xs text-zinc-500 hover:text-zinc-300">
+              Skip for now
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -2805,6 +2861,7 @@ function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySym
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking, null = logged out
+  const [recovering, setRecovering] = useState(false); // opened a password-reset link
   const [saveStatus, setSaveStatus] = useState("saved"); // "saved" | "saving" | "error"
   const [accountError, setAccountError] = useState(null);
   const [accountReload, setAccountReload] = useState(0); // bump to retry loading the account
@@ -2931,7 +2988,10 @@ export default function App() {
   // auth session: restore on load (Supabase keeps you logged in) and follow log-in/out
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === "PASSWORD_RECOVERY") setRecovering(true);
+      setSession(s ?? null);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -3612,7 +3672,8 @@ export default function App() {
 
   function onNotification(n) {
     if (n.kind === "request") goSocial("requests");
-    else if (n.kind === "accepted" || n.kind === "joined") openProfile(n.actor?.id);
+    else if (n.kind === "accepted" || n.kind === "joined" || n.kind === "follow") openProfile(n.actor?.id);
+    else if (["reaction", "comment", "reply", "vote"].includes(n.kind) && n.activity_id) goSocial("post", { postId: n.activity_id });
     else if (n.kind === "group_add" || n.kind === "group_post") goSocial("groups", { groupId: n.group_id });
     else if (n.kind === "share" && n.data?.symbol) openStock(n.data.symbol);
     else goSocial("feed");
@@ -3817,6 +3878,8 @@ export default function App() {
 
   if (!session) return <PublicSite inviteFrom={inviteFrom} />;
 
+  if (recovering) return <NewPasswordScreen email={session.user.email} onDone={() => setRecovering(false)} />;
+
   if (!ready) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-zinc-950 px-4 text-center text-zinc-500">
@@ -3973,6 +4036,8 @@ export default function App() {
             onDismissSteps={() => persistOnboarding({ ...onboarding, dismissed: true })}
             stockData={stockData}
             ensureSymbols={ensureSymbols}
+            quoteOf={quoteOf}
+            getQuote={getQuote}
             onToast={setToast}
           />
         )}
@@ -4182,6 +4247,7 @@ export default function App() {
             getQuote={getQuote}
             mySymbols={allSymbols}
             onAddToWatchlist={handleAddPick}
+            dailyPicks={pickCache?.ranked?.slice(0, 5)}
             renderInvite={() => <InviteRewards uid={userId} apiKey={apiKey} onClaim={applyInviteBonus} />}
             renderPortfolio={(uid, name) => (
               <FriendPortfolio
@@ -4251,6 +4317,9 @@ export default function App() {
           onOpenProfile={openProfile}
           onPractice={(symbol, price) => setPracticeModal({ side: "buy", symbol, price })}
           onShare={setShareSymbol}
+          quoteOf={quoteOf}
+          getQuote={getQuote}
+          ensureSymbols={ensureSymbols}
         />
       )}
 

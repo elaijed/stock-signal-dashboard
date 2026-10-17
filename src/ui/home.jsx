@@ -89,7 +89,7 @@ function notifText(n) {
 export default function Home({
   uid, name, ownedStats, benchCandles, alerts, notifs, onRefreshNotifs, digest, stockInfo, symbols,
   pickCache, watchlist, onOpenStock, onOpenProfile, onGo, onGoSocial, onAdd, onNotification,
-  steps, onDismissSteps, stockData, ensureSymbols, onToast,
+  steps, onDismissSteps, stockData, ensureSymbols, quoteOf, getQuote, onToast,
 }) {
   // snapshot
   const priced = ownedStats.filter((s) => s.value != null);
@@ -253,7 +253,7 @@ export default function Home({
               </button>
             }
           >
-            <Feed uid={uid} limit={3} showComposer={false} onOpenStock={onOpenStock} onOpenProfile={onOpenProfile}
+            <Feed uid={uid} limit={3} showComposer={false} onOpenStock={onOpenStock} onOpenProfile={onOpenProfile} quoteOf={quoteOf} getQuote={getQuote} ensureSymbols={ensureSymbols}
               emptyText="When your friends buy, sell or post, it shows up here." />
           </Card>
         </div>
