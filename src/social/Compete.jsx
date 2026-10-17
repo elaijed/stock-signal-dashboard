@@ -6,6 +6,7 @@ import Avatar from "./Avatar.jsx";
 import { Ic } from "../ui/icons.jsx";
 import { Burst, GameStyles, store } from "../game/fx.jsx";
 import { levelFor } from "../game/levels.js";
+import WeeklyCard from "../game/WeeklyCard.jsx";
 import { Sheet, Skeleton, EmptyState, TickerMono, btn, inputCls, firstName, signedPct, money, friendly, isMissingFn, useSocial } from "./ui.jsx";
 import { leaderboard, challengeBoard, enterChallenge, postActivity, updateMyProfile, practiceLeaderboard, gameBoard } from "./api.js";
 
@@ -646,6 +647,8 @@ export default function Compete({ uid, me, setMe, ensureSymbols, quoteOf, getQuo
           youEmpty={optedIn ? "Add stocks you own to get a score." : "Only you can see your row until you join."}
         />
       )}
+
+      <WeeklyCard uid={uid} name={me?.full_name} onToast={toast} />
 
       <JoinSheet
         open={joining}

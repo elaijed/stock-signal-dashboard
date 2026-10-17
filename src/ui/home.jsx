@@ -5,6 +5,7 @@ import { acceptRequestFrom, removeConnectionWith, leaderboard, getBadges, postAc
 import { DigestCard, EarningsList, marketStatus } from "./portfolio.jsx";
 import { notifText } from "../social/Notifications.jsx";
 import { Ic } from "./icons.jsx";
+import WeeklyCard from "../game/WeeklyCard.jsx";
 import { GLOSSARY, pickReason } from "./explain.js";
 
 const money = (n) => `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -163,6 +164,9 @@ export default function Home({
           ))}
         </div>
       )}
+
+      {/* every Sunday: your week as a shareable card */}
+      {new Date().getDay() === 0 && <WeeklyCard uid={uid} name={name} onToast={onToast} />}
 
       {steps && <GettingStarted steps={steps} onDismiss={onDismissSteps} />}
 
