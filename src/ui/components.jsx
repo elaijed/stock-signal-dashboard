@@ -179,11 +179,13 @@ export function FriendsStack({ owners = [], watchers = [], onOpen }) {
 
 // small toast stack
 export function Toast({ message, onDone }) {
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(onDone, 3500);
+    const t = setTimeout(() => doneRef.current?.(), 3500);
     return () => clearTimeout(t);
-  }, [message, onDone]);
+  }, [message]);
   if (!message) return null;
   return (
     <div className="fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 shadow-2xl sm:bottom-6">

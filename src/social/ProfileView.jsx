@@ -228,6 +228,96 @@ function Actions({ p, myId, hasMyProfile, onChanged, onNeedProfile }) {
   );
 }
 
+
+// The detailed "About" fields of a profile (already filtered by the database)
+export function ProfileAbout({ p }) {
+  const work = [p.job_title, p.company].filter(Boolean).join(" at ");
+  const study = [p.degree, p.field_of_study].filter(Boolean).join(", ");
+  const school = [study, p.school].filter(Boolean).join(" · ");
+  const links = LINKS.map((l) => ({ ...l, href: safeUrl(p.links?.[l.id]) })).filter((l) => l.href);
+  const since = p.member_since
+    ? new Date(p.member_since).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : null;
+  const hasCounts = p.connection_count != null;
+  return (
+    <>
+          <div className="mt-4 space-y-1.5">
+        {work && <Row icon="briefcase">{work}{p.industry ? <span className="text-zinc-500"> · {p.industry}</span> : null}</Row>}
+        {!work && p.industry && <Row icon="briefcase">{p.industry}</Row>}
+        {school && (
+          <Row icon="cap">
+            {school}
+            {p.grad_year ? <span className="text-zinc-500"> · {p.grad_year}</span> : null}
+          </Row>
+        )}
+        {p.location && <Row icon="pin">{p.location}</Row>}
+        {since && <Row icon="calendar">Member since {since}</Row>}
+      </div>
+
+      {!!(p.experience_level || (p.years_investing ?? "") !== "" || p.risk_tolerance || p.styles?.length || p.sectors?.length) && (
+        <div className="mt-5">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Investing</div>
+          <div className="flex flex-wrap gap-1.5">
+            {p.experience_level && <Chip>{label(EXPERIENCE, p.experience_level)}</Chip>}
+            {(p.years_investing ?? "") !== "" && (
+              <Chip>
+                {p.years_investing} year{p.years_investing === 1 ? "" : "s"} investing
+              </Chip>
+            )}
+            {p.risk_tolerance && <Chip>{label(RISK, p.risk_tolerance)} risk</Chip>}
+            {(p.styles || []).map((s) => (
+              <Chip key={s}>{s}</Chip>
+            ))}
+          </div>
+          {p.sectors?.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {p.sectors.map((s) => (
+                <span key={s} className="rounded-full border border-blue-800/60 bg-blue-950/40 px-2.5 py-1 text-xs text-blue-300">
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {p.goals && (
+        <div className="mt-4">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Goals</div>
+          <p className="text-sm text-zinc-300">{p.goals}</p>
+        </div>
+      )}
+
+      {p.brokers?.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Uses</span>
+          {p.brokers.map((b) => (
+            <Chip key={b}>{b}</Chip>
+          ))}
+        </div>
+      )}
+
+      {links.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          {links.map((l) => (
+            <a key={l.id} href={l.href} target="_blank" rel="noopener noreferrer nofollow" className="text-blue-400 hover:underline">
+              {l.label} ↗
+            </a>
+          ))}
+        </div>
+      )}
+
+          {hasCounts && (
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <Stat label="Connections" value={p.connection_count} />
+          <Stat label="Stocks owned" value={p.owned_count} />
+          <Stat label="Watching" value={p.watching_count} />
+        </div>
+      )}
+    </>
+  );
+}
+
 // Renders a profile as returned by get_profile() (already filtered by the
 // database) or a locally-filtered preview of your own.
 export default function ProfileView({ profile: p, myId, hasMyProfile, preview, onChanged, onNeedProfile, onBack, children }) {
@@ -270,81 +360,10 @@ export default function ProfileView({ profile: p, myId, hasMyProfile, preview, o
 
           {p.bio && <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-zinc-300">{p.bio}</p>}
 
-          <div className="mt-4 space-y-1.5">
-            {work && <Row icon="briefcase">{work}{p.industry ? <span className="text-zinc-500"> · {p.industry}</span> : null}</Row>}
-            {!work && p.industry && <Row icon="briefcase">{p.industry}</Row>}
-            {school && (
-              <Row icon="cap">
-                {school}
-                {p.grad_year ? <span className="text-zinc-500"> · {p.grad_year}</span> : null}
-              </Row>
-            )}
-            {p.location && <Row icon="pin">{p.location}</Row>}
-            {since && <Row icon="calendar">Member since {since}</Row>}
-          </div>
-
-          {!!(p.experience_level || (p.years_investing ?? "") !== "" || p.risk_tolerance || p.styles?.length || p.sectors?.length) && (
-            <div className="mt-5">
-              <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Investing</div>
-              <div className="flex flex-wrap gap-1.5">
-                {p.experience_level && <Chip>{label(EXPERIENCE, p.experience_level)}</Chip>}
-                {(p.years_investing ?? "") !== "" && (
-                  <Chip>
-                    {p.years_investing} year{p.years_investing === 1 ? "" : "s"} investing
-                  </Chip>
-                )}
-                {p.risk_tolerance && <Chip>{label(RISK, p.risk_tolerance)} risk</Chip>}
-                {(p.styles || []).map((s) => (
-                  <Chip key={s}>{s}</Chip>
-                ))}
-              </div>
-              {p.sectors?.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {p.sectors.map((s) => (
-                    <span key={s} className="rounded-full border border-blue-800/60 bg-blue-950/40 px-2.5 py-1 text-xs text-blue-300">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {p.goals && (
-            <div className="mt-4">
-              <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Goals</div>
-              <p className="text-sm text-zinc-300">{p.goals}</p>
-            </div>
-          )}
-
-          {p.brokers?.length > 0 && (
-            <div className="mt-4 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Uses</span>
-              {p.brokers.map((b) => (
-                <Chip key={b}>{b}</Chip>
-              ))}
-            </div>
-          )}
-
-          {links.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-3 text-sm">
-              {links.map((l) => (
-                <a key={l.id} href={l.href} target="_blank" rel="noopener noreferrer nofollow" className="text-blue-400 hover:underline">
-                  {l.label} ↗
-                </a>
-              ))}
-            </div>
-          )}
+          <ProfileAbout p={p} />
 
           {!preview || p.relation === "self" ? <Badges uid={p.id} /> : null}
 
-          {hasCounts && (
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              <Stat label="Connections" value={p.connection_count} />
-              <Stat label="Stocks owned" value={p.owned_count} />
-              <Stat label="Watching" value={p.watching_count} />
-            </div>
-          )}
         </div>
       </div>
       {children}

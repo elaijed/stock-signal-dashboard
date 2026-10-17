@@ -15,6 +15,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase } from "./supabase.js";
+import { BACKTEST_BUDGET, analyze, computeMACD, emaSeries, rsi, runBacktest, sma, stdev } from "./lib/signals.js";
 import SocialPage from "./social/SocialPage.jsx";
 import {
   myNetwork, getSharedPortfolio, loadMyProfile, postActivity, networkSymbols, myNotifications, acceptInvite,
@@ -28,6 +29,14 @@ import Home, { GlossaryPage } from "./ui/home.jsx";
 import { PracticePage, PracticeTradeModal, applyPaperTrade, newPaper } from "./ui/practice.jsx";
 import ShareModal from "./ui/share.jsx";
 import { challengeBoard } from "./social/api.js";
+import PublicSite from "./landing/PublicSite.jsx";
+import KeyGuide from "./landing/KeyGuide.jsx";
+import CallOfTheDay from "./game/CallOfTheDay.jsx";
+import Learn from "./learn/Learn.jsx";
+import XpCard from "./game/XpCard.jsx";
+import InviteRewards, { practiceBonus } from "./game/InviteRewards.jsx";
+import { AboutPage, ContactPage, PrivacyPage, TermsPage } from "./landing/InfoPages.jsx";
+import { inviteKeyFor, deleteMyAccount, postMilestone, myInviteStats } from "./social/api.js";
 import { PerformanceChart, TodayStrip, useDigest, DigestCard, EarningsList, DividendsCard, Welcome } from "./ui/portfolio.jsx";
 
 /*
@@ -218,275 +227,6 @@ const PICK_POOL = [
   // telecom, utilities, autos
   "T", "VZ", "TMUS", "CMCSA", "NEE", "DUK", "SO", "F", "GM",
 ];
-
-// ---------- indicators ----------
-
-function sma(values, period) {
-  if (values.length < period) return null;
-  let sum = 0;
-  for (let i = values.length - period; i < values.length; i++) sum += values[i];
-  return sum / period;
-}
-
-// 14-day RSI with Wilder's smoothing
-function rsi(values, period = 14) {
-  if (values.length < period + 1) return null;
-  let gain = 0;
-  let loss = 0;
-  for (let i = 1; i <= period; i++) {
-    const d = values[i] - values[i - 1];
-    if (d >= 0) gain += d;
-    else loss -= d;
-  }
-  let avgGain = gain / period;
-  let avgLoss = loss / period;
-  for (let i = period + 1; i < values.length; i++) {
-    const d = values[i] - values[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
-  }
-  if (avgLoss === 0) return 100;
-  return 100 - 100 / (1 + avgGain / avgLoss);
-}
-
-// exponential moving average — full series, null until seeded (SMA seed at `period`)
-function emaSeries(values, period) {
-  if (values.length < period) return [];
-  const k = 2 / (period + 1);
-  const out = new Array(values.length).fill(null);
-  let prev = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  out[period - 1] = prev;
-  for (let i = period; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k);
-    out[i] = prev;
-  }
-  return out;
-}
-
-// MACD (12/26/9 standard). Returns the latest read { macd, signal, hist, bull }
-// or null when there isn't enough history. bull = MACD line above its signal line.
-function computeMACD(closes, fast = 12, slow = 26, sig = 9) {
-  if (closes.length < slow + sig) return null;
-  const emaFast = emaSeries(closes, fast);
-  const emaSlow = emaSeries(closes, slow);
-  const macdLine = [];
-  for (let i = 0; i < closes.length; i++) {
-    if (emaFast[i] != null && emaSlow[i] != null) macdLine.push(emaFast[i] - emaSlow[i]);
-  }
-  if (macdLine.length < sig) return null;
-  const sigSeries = emaSeries(macdLine, sig);
-  const signal = sigSeries[sigSeries.length - 1];
-  const macd = macdLine[macdLine.length - 1];
-  const hist = macd - signal;
-  // sessions since the MACD line last crossed its signal line (null if no cross in view)
-  let crossAgo = null;
-  for (let i = macdLine.length - 2, k = 1; i >= 0 && sigSeries[i] != null; i--, k++) {
-    if ((macdLine[i] - sigSeries[i] > 0) !== hist > 0) {
-      crossAgo = k - 1;
-      break;
-    }
-  }
-  return { macd, signal, hist, bull: hist > 0, crossAgo };
-}
-
-function stdev(arr) {
-  if (arr.length < 2) return 0;
-  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-  return Math.sqrt(arr.reduce((s, x) => s + (x - mean) ** 2, 0) / (arr.length - 1));
-}
-
-/**
- * Full technical read + precise, volatility-aware trade parameters for one
- * ticker. Every number here is computed deterministically — the AI narrative
- * only describes these values, it never invents them. Returns null when there
- * isn't enough history (need 50 sessions for the SMA50).
- *
- * Levels:
- * - support/resistance: SMA50 (trend floor) and the 6-month swing high.
- * - stop: a volatility-scaled stop (2.5× the 20-day daily σ, capped 5–15%) so
- *   choppy names get more room and calm names a tighter leash.
- * - target: the recent high if it's a real distance away, otherwise a 2:1
- *   reward-to-risk projection off the stop.
- */
-function analyze(candles, quote, item) {
-  if (!candles || candles.length < 50) return null;
-  const closes = candles.map((c) => c.close);
-  const price = quote?.c ?? closes[closes.length - 1];
-  const sma20 = sma(closes, 20);
-  const sma50 = sma(closes, 50);
-  const rsi14 = rsi(closes, 14);
-  const rsiPrev = closes.length > 18 ? rsi(closes.slice(0, -3), 14) : null; // ~3 sessions ago, for direction
-  const spreadPct = ((sma20 - sma50) / sma50) * 100;
-
-  // recent 6-month range for support/resistance context
-  const win = closes.slice(-126);
-  const hi = Math.max(...win);
-  const lo = Math.min(...win);
-  const pctFromHigh = ((price - hi) / hi) * 100; // ≤ 0: how far below the recent high
-
-  // 20-day close-to-close volatility (% per day) → volatility-scaled stop width
-  const rets = [];
-  for (let i = Math.max(1, closes.length - 20); i < closes.length; i++) {
-    rets.push(((closes[i] - closes[i - 1]) / closes[i - 1]) * 100);
-  }
-  const dayVol = stdev(rets);
-  const stopPct = clamp(2.5 * dayVol, 5, 15);
-
-  // volume: last completed session vs its 20-day average (skip today's partial bar)
-  let volRatio = null;
-  {
-    let vIdx = candles.length - 1;
-    const lastBar = new Date(candles[vIdx].t * 1000);
-    const now = new Date();
-    if (
-      lastBar.getUTCFullYear() === now.getUTCFullYear() &&
-      lastBar.getUTCMonth() === now.getUTCMonth() &&
-      lastBar.getUTCDate() === now.getUTCDate()
-    )
-      vIdx -= 1;
-    const vols = candles.slice(0, vIdx + 1).map((c) => c.v).filter((v) => v > 0);
-    if (vols.length >= 21) {
-      const avg20 = vols.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
-      volRatio = vols[vols.length - 1] / avg20;
-    }
-  }
-
-  // trend / momentum flags
-  const uptrend = spreadPct > 0.5;
-  const downtrend = spreadPct < -0.5;
-  const strongUp = spreadPct > 3;
-  const strongDown = spreadPct < -3;
-  const overbought = rsi14 >= 70;
-  const oversold = rsi14 <= 30;
-  const rsiRising = rsiPrev != null && rsi14 > rsiPrev + 1;
-  const rsiFalling = rsiPrev != null && rsi14 < rsiPrev - 1;
-  const extended = price > sma20 * 1.08; // stretched > 8% above the 20-day
-
-  let signal = "Neutral";
-  if (uptrend && !overbought) signal = "Bullish";
-  else if (downtrend && !oversold) signal = "Bearish";
-
-  // MACD (12/26/9) as a second confirming signal. Each of the three indicators
-  // casts a directional vote; when all three agree we upgrade to "Strong", and
-  // when they conflict we flag "mixed signals" so lower confidence is visible.
-  const macd = computeMACD(closes);
-  const maVote = spreadPct > 0.5 ? 1 : spreadPct < -0.5 ? -1 : 0;
-  const rsiVote = rsi14 > 50 ? 1 : rsi14 < 50 ? -1 : 0;
-  const macdVote = macd ? (macd.hist > 0 ? 1 : macd.hist < 0 ? -1 : 0) : 0;
-  const allBull = maVote > 0 && rsiVote > 0 && macdVote > 0;
-  const allBear = maVote < 0 && rsiVote < 0 && macdVote < 0;
-  const signalStrong = (signal === "Bullish" && allBull) || (signal === "Bearish" && allBear);
-  const anyBull = maVote > 0 || rsiVote > 0 || macdVote > 0;
-  const anyBear = maVote < 0 || rsiVote < 0 || macdVote < 0;
-  const signalMixed = !signalStrong && anyBull && anyBear;
-  const signalLabel = signalStrong ? `Strong ${signal}` : signal;
-
-  // precise levels
-  const support = price > sma50 ? sma50 : lo; // trend support, else recent floor
-  const resistance = price < hi ? hi : price * (1 + (stopPct / 100) * 2); // recent high, else projected
-  const stop = price * (1 - stopPct / 100);
-  const risk = price - stop;
-  const target = resistance > price * 1.03 ? resistance : price + 2 * risk;
-  const reward = target - price;
-  const rr = risk > 0 ? reward / risk : null;
-
-  // owned P/L
-  let gainPct = null;
-  let gainUsd = null;
-  if (item?.status === "owned" && item.buyPrice > 0) {
-    gainPct = ((price - item.buyPrice) / item.buyPrice) * 100;
-    gainUsd = (price - item.buyPrice) * item.qty;
-  }
-
-  // recommendation: action + conviction + a one-line rationale
-  const strength = (isStrong) => (isStrong ? "High" : Math.abs(spreadPct) > 1.5 ? "Moderate" : "Low");
-  let action, conviction, rationale;
-  if (item?.status === "owned") {
-    if (strongDown || (downtrend && gainPct != null && gainPct < 0)) {
-      action = "Consider Selling";
-      conviction = strength(strongDown);
-      rationale = "The trend has turned down — protect capital rather than hope for a bounce.";
-    } else if (downtrend) {
-      action = "Reduce / Tighten Stop";
-      conviction = "Moderate";
-      rationale = "Momentum is fading; trim the position or set a tight stop to lock in what you have.";
-    } else if (uptrend && overbought && gainPct != null && gainPct > 15) {
-      action = "Consider Trimming";
-      conviction = "Moderate";
-      rationale = "Strong run but overbought — taking partial profit de-risks the position.";
-    } else if (uptrend && (gainPct == null || gainPct < 5) && !extended) {
-      action = "Buy More";
-      conviction = strength(strongUp);
-      rationale = "Healthy uptrend and the price isn't stretched — a clean spot to add.";
-    } else if (uptrend) {
-      action = "Hold";
-      conviction = strength(strongUp);
-      rationale = "Trend is intact; ride it with a protective stop and let the winner run.";
-    } else {
-      action = "Hold";
-      conviction = "Low";
-      rationale = "No clear trend — hold and wait for the moving averages to resolve direction.";
-    }
-  } else {
-    if (downtrend) {
-      action = "Avoid";
-      conviction = strength(strongDown);
-      rationale = "Price is below its trend line — there's no edge buying a downtrend.";
-    } else if (uptrend && overbought) {
-      action = "Wait for Pullback";
-      conviction = "Moderate";
-      rationale = "The uptrend is real but overbought; a dip toward the 20-day is a better entry.";
-    } else if (uptrend && oversold) {
-      action = "Buy the Dip";
-      conviction = rsiRising ? "High" : "Moderate";
-      rationale = "A pullback inside an uptrend — buy weakness near support with a tight stop.";
-    } else if (uptrend && extended) {
-      action = "Buy on Pullback";
-      conviction = "Low";
-      rationale = "Trend is strong but price is stretched — wait for it to come back to the 20-day.";
-    } else if (uptrend) {
-      action = "Buy";
-      conviction = strength(strongUp);
-      rationale = "Clean uptrend with room to run and a defined stop below support.";
-    } else {
-      action = "Watch";
-      conviction = "Low";
-      rationale = "Flat and undecided — wait for a decisive move above the 50-day.";
-    }
-  }
-  if (signalStrong) conviction = "High"; // all three indicators aligned → higher confidence
-
-  // concrete factor chips
-  const factors = [];
-  factors.push(
-    spreadPct >= 0
-      ? `Uptrend · 20-day ${spreadPct.toFixed(1)}% above 50-day`
-      : `Downtrend · 20-day ${Math.abs(spreadPct).toFixed(1)}% below 50-day`
-  );
-  factors.push(
-    overbought
-      ? `RSI ${rsi14.toFixed(0)} · overbought`
-      : oversold
-      ? `RSI ${rsi14.toFixed(0)} · oversold`
-      : `RSI ${rsi14.toFixed(0)} · ${rsi14 >= 45 && rsi14 <= 65 ? "healthy" : "neutral"}${
-          rsiRising ? ", rising" : rsiFalling ? ", falling" : ""
-        }`
-  );
-  if (macd) factors.push(macd.bull ? "MACD bullish (above signal)" : "MACD bearish (below signal)");
-  if (volRatio != null && volRatio >= 1.3) factors.push(`Volume ${volRatio.toFixed(1)}× avg`);
-  factors.push(`${Math.abs(pctFromHigh).toFixed(1)}% below 6-mo high`);
-
-  const bearish = /(sell|reduce|trim|avoid)/i.test(action);
-
-  return {
-    signal, signalLabel, signalStrong, signalMixed, macd,
-    sma20, sma50, rsi14, spreadPct, price, hi, lo, pctFromHigh, dayVol, stopPct,
-    volRatio, support, resistance, stop, target, risk, reward, rr,
-    action, conviction, rationale, factors, gainPct, gainUsd, bearish,
-    uptrend, downtrend, strongUp, strongDown, overbought, oversold, rsiRising, rsiFalling, extended,
-    votes: { ma: maVote, rsi: rsiVote, macd: macdVote },
-  };
-}
 
 function actionStyle(action) {
   const a = action.toLowerCase();
@@ -919,85 +659,6 @@ function scoreStock(symbol, candles, metric) {
 
   if (price == null) return null; // nothing usable at all — drop from ranking
   return { symbol, score: clamp(Math.round(score), 0, 100), price, reasons };
-}
-
-// ---------- backtest ----------
-
-const BACKTEST_BUDGET = 1000; // hypothetical starting amount for both strategies
-
-/**
- * Simulate buy-and-hold vs signal-following over the same ~6-month window the
- * mini chart displays, using the candles already cached in state.
- *
- * Rules (kept deliberately simple):
- * - Buy-and-hold: put the full $1,000 into shares on day one, hold to the end.
- * - Signal-following: start with $1,000 cash. Go all-in when SMA20 crosses
- *   above SMA50; sell everything back to cash when it crosses below. If the
- *   window opens already bullish, buy on day one (signal considered active).
- * - Fractional shares allowed, no commissions/slippage (hypothetical exercise).
- *
- * Returns null when there isn't enough history for the 50-day SMA.
- */
-function runBacktest(candles) {
-  const closes = candles.map((c) => c.close);
-
-  // rolling SMA for every index (null until `period` days of history exist)
-  const rollingSma = (period) => {
-    const out = new Array(closes.length).fill(null);
-    let sum = 0;
-    for (let i = 0; i < closes.length; i++) {
-      sum += closes[i];
-      if (i >= period) sum -= closes[i - period];
-      if (i >= period - 1) out[i] = sum / period;
-    }
-    return out;
-  };
-  const s20 = rollingSma(20);
-  const s50 = rollingSma(50);
-
-  // Backtest window: last ~126 trading days, but never before SMA50 exists.
-  const start = Math.max(49, candles.length - 126);
-  if (candles.length - start < 10) return null; // not enough data to be meaningful
-
-  // Buy-and-hold: all-in on the first day of the window.
-  const bhShares = BACKTEST_BUDGET / closes[start];
-
-  // Signal-following state, updated one day at a time.
-  let state = { cash: BACKTEST_BUDGET, shares: 0, day: 0 };
-  let trades = 0;
-  let prevBullish = null; // relation on the previous day (null = window start)
-  const series = [];
-
-  for (let i = start; i < candles.length; i++) {
-    const price = closes[i];
-    const bullish = s20[i] > s50[i];
-
-    // A "cross" is a change in the SMA20/SMA50 relation since yesterday.
-    // On day one, an already-bullish market counts as an active buy signal.
-    const buySignal = bullish && (prevBullish === null || prevBullish === false);
-    const sellSignal = !bullish && prevBullish === true;
-
-    if (buySignal && state.cash > 0) {
-      state = { cash: 0, shares: state.cash / price, day: state.day };
-      trades++;
-    } else if (sellSignal && state.shares > 0) {
-      state = { cash: state.shares * price, shares: 0, day: state.day };
-      trades++;
-    }
-    prevBullish = bullish;
-    state = { ...state, day: state.day + 1 };
-
-    series.push({
-      t: candles[i].t,
-      buyHold: bhShares * price,
-      signal: state.cash + state.shares * price,
-    });
-  }
-
-  const last = series[series.length - 1];
-  const bhReturn = (last.buyHold / BACKTEST_BUDGET - 1) * 100;
-  const sigReturn = (last.signal / BACKTEST_BUDGET - 1) * 100;
-  return { series, bhReturn, sigReturn, trades, days: series.length };
 }
 
 // ---------- palette (dashboard commits to a dark finance theme) ----------
@@ -1795,7 +1456,7 @@ function OwnedCard({ stat, info, alerts, onSetAlert, onDeleteAlert, onSell, frie
 }
 
 // Full-screen stock page: big chart, the reasoning, what-if, friends, polls, news
-function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile, onPractice, onShare }) {
+function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, onClose, onAdd, onBuy, onSetAlert, onDeleteAlert, onOpenProfile, onPractice, onShare, quoteOf, getQuote, ensureSymbols }) {
   const quote = data?.quote;
   const candles = data?.candles;
   const a = candles ? analyze(candles, quote, item || { symbol, status: "watching" }) : null;
@@ -1813,15 +1474,17 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
   const pe = m?.peTTM ?? m?.peBasicExclExtraTTM;
   const cap = info?.profile?.marketCapitalization;
 
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
+    const onKey = (e) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-zinc-950/95 backdrop-blur-sm">
@@ -1982,10 +1645,66 @@ function StockDetail({ symbol, item, data, info, alerts, friends, uid, inList, o
         {/* friends' polls and notes about this stock */}
         <section className="mt-6">
           <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">What your friends think about {symbol}</div>
-          <Feed uid={uid} symbol={symbol} limit={10} onOpenStock={() => {}} onOpenProfile={onOpenProfile}
+          <Feed uid={uid} symbol={symbol} limit={10} onOpenStock={() => {}} onOpenProfile={onOpenProfile} quoteOf={quoteOf} getQuote={getQuote} ensureSymbols={ensureSymbols}
             emptyText={`No posts about ${symbol} yet. Ask your friends what they think with a poll above.`} />
         </section>
         <p className="mt-6 text-center text-[11px] text-zinc-600">Educational tool only, not financial advice.</p>
+      </div>
+    </div>
+  );
+}
+
+// Shown after opening a password-reset link: Supabase signs you in and asks for a new password
+function NewPasswordScreen({ email, onDone }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+  async function save(e) {
+    e.preventDefault();
+    setError(null);
+    if (pw.length < 8) return setError("Use at least 8 characters.");
+    if (pw !== pw2) return setError("The two passwords don't match.");
+    setBusy(true);
+    const { error: err } = await supabase.auth.updateUser({ password: pw });
+    setBusy(false);
+    if (err) setError(err.message);
+    else {
+      setDone(true);
+      try {
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      } catch (_) {}
+    }
+  }
+  const input = "w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-blue-500";
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900 p-6">
+        <img src="./icon.svg" alt="" className="mb-4 h-10 w-10 rounded-lg" />
+        {done ? (
+          <>
+            <h1 className="font-display text-2xl font-bold text-zinc-50">Password updated</h1>
+            <p className="mt-2 text-sm text-zinc-400">You're signed in. Use your new password next time you log in.</p>
+            <button onClick={onDone} className="mt-5 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">
+              Continue
+            </button>
+          </>
+        ) : (
+          <form onSubmit={save} className="space-y-3">
+            <h1 className="font-display text-2xl font-bold text-zinc-50">Choose a new password</h1>
+            <p className="text-sm text-zinc-400">For {email}</p>
+            <input type="password" autoComplete="new-password" placeholder="New password" value={pw} onChange={(e) => setPw(e.target.value)} className={input} autoFocus />
+            <input type="password" autoComplete="new-password" placeholder="Type it again" value={pw2} onChange={(e) => setPw2(e.target.value)} className={input} />
+            {error && <div className="text-sm text-red-400">{error}</div>}
+            <button disabled={busy} className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60">
+              {busy ? "Saving…" : "Save new password"}
+            </button>
+            <button type="button" onClick={onDone} className="w-full py-1 text-xs text-zinc-500 hover:text-zinc-300">
+              Skip for now
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -2165,14 +1884,15 @@ function HeaderMenu({ email, profile, theme, onTheme, onSettings, onProfile, onW
 const NAV = [
   { id: "home", label: "Home", icon: "home" },
   { id: "watchlist", label: "My Stocks", icon: "chart", also: ["owned"] },
-  { id: "recommendations", label: "Discover", icon: "compass" },
+  { id: "recommendations", label: "Top Picks", icon: "trophy" },
+  { id: "learn", label: "Learn", icon: "cap", also: ["glossary"] },
   { id: "social", label: "Social", icon: "users" },
 ];
 
 function BottomNav({ page, onGo, badges }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-5">
         {NAV.map((t) => (
           <button
             key={t.id}
@@ -2191,8 +1911,10 @@ function BottomNav({ page, onGo, badges }) {
   );
 }
 
-function SettingsModal({ open, apiKey, onSave, onClose }) {
+function SettingsModal({ open, apiKey, onSave, onClose, onDeleteAccount }) {
   const [draft, setDraft] = useState(apiKey || "");
+  const [deleting, setDeleting] = useState(null); // null | "confirm" | "busy" | error text
+  const [confirmText, setConfirmText] = useState("");
   useEffect(() => {
     setDraft(apiKey || "");
   }, [apiKey, open]);
@@ -2229,6 +1951,46 @@ function SettingsModal({ open, apiKey, onSave, onClose }) {
             Save
           </button>
         </div>
+        {onDeleteAccount && (
+          <div className="mt-6 border-t border-zinc-800 pt-4">
+            {deleting === null ? (
+              <button onClick={() => setDeleting("confirm")} className="text-sm text-red-400 hover:text-red-300">
+                Delete my account
+              </button>
+            ) : (
+              <div>
+                <p className="mb-2 text-sm text-zinc-300">
+                  This permanently deletes your account, profile, portfolio, posts, comments and photos. It can't be undone. Type <b>DELETE</b> to confirm.
+                </p>
+                <input
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  className="mb-2 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+                {deleting !== "confirm" && deleting !== "busy" && <p className="mb-2 text-sm text-red-400">{deleting}</p>}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => (setDeleting(null), setConfirmText(""))} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800">
+                    Keep my account
+                  </button>
+                  <button
+                    disabled={confirmText.trim() !== "DELETE" || deleting === "busy"}
+                    onClick={async () => {
+                      setDeleting("busy");
+                      try {
+                        await onDeleteAccount();
+                      } catch (e) {
+                        setDeleting(e?.message || "Couldn't delete the account. Try again.");
+                      }
+                    }}
+                    className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                  >
+                    {deleting === "busy" ? "Deleting…" : "Delete forever"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2862,202 +2624,6 @@ function TopPicksSection({ cache, progress, watchlist, onAdd, onOpen }) {
 
 // ---------- login / sign-up ----------
 
-function AuthScreen() {
-  const [mode, setMode] = useState("login"); // "login" | "signup"
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
-  const [needsConfirm, setNeedsConfirm] = useState(false);
-
-  const switchMode = (m) => {
-    setMode(m);
-    setError(null);
-    setNotice(null);
-    setConfirmPw("");
-  };
-
-  async function submit(e) {
-    e.preventDefault();
-    setError(null);
-    setNotice(null);
-    const em = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return setError("Enter a valid email address.");
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
-    if (mode === "signup" && password !== confirmPw) return setError("Passwords don't match.");
-    setBusy(true);
-    try {
-      if (mode === "login") {
-        const { error: err } = await supabase.auth.signInWithPassword({ email: em, password });
-        if (err) {
-          if (/confirm/i.test(err.message)) {
-            setNeedsConfirm(true);
-            setError("Your email isn't confirmed yet — click the link we emailed you, then log in.");
-          } else if (/invalid login credentials/i.test(err.message)) {
-            setError("Wrong email or password.");
-          } else {
-            setError(err.message);
-          }
-        }
-        // on success, App's auth listener swaps this screen for the dashboard
-      } else {
-        const { data, error: err } = await supabase.auth.signUp({
-          email: em,
-          password,
-          options: { emailRedirectTo: window.location.origin + window.location.pathname },
-        });
-        if (err) {
-          setError(err.message);
-        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          // Supabase answers this way (no error) when the email is already registered
-          setError("An account with this email already exists — log in instead.");
-          setMode("login");
-        } else if (!data.session) {
-          setNeedsConfirm(true);
-          setNotice(
-            `Account created! We emailed a confirmation link to ${em}. Click it (if the page it opens doesn't load, that's fine — your account is still confirmed), then come back here and log in.`
-          );
-          setMode("login");
-          setPassword("");
-          setConfirmPw("");
-        }
-      }
-    } catch (err) {
-      setError(err?.message || "Something went wrong — check your connection and try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resend() {
-    setError(null);
-    const em = email.trim();
-    if (!em) return setError("Enter your email above first.");
-    const { error: err } = await supabase.auth.resend({
-      type: "signup",
-      email: em,
-      options: { emailRedirectTo: window.location.origin + window.location.pathname },
-    });
-    if (err) setError(err.message);
-    else setNotice(`Confirmation email re-sent to ${em}.`);
-  }
-
-  const inputCls =
-    "w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500";
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 py-10 font-sans text-zinc-200">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-zinc-50">Stock Signal Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500">Your watchlist, positions and alerts — saved to your account.</p>
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl">
-          <div className="mb-5 flex gap-1 rounded-lg bg-zinc-800/60 p-1">
-            {[
-              ["login", "Log in"],
-              ["signup", "Sign up"],
-            ].map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => switchMode(m)}
-                className={`flex-1 rounded-md py-1.5 text-sm font-medium transition ${
-                  mode === m ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <form onSubmit={submit} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">Email</label>
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-xs font-medium uppercase tracking-wider text-zinc-500">Password</label>
-                <button
-                  type="button"
-                  onClick={() => setShowPw((s) => !s)}
-                  className="text-[11px] text-zinc-500 hover:text-zinc-300"
-                >
-                  {showPw ? "Hide" : "Show"}
-                </button>
-              </div>
-              <input
-                type={showPw ? "text" : "password"}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === "signup" ? "At least 8 characters" : ""}
-                className={inputCls}
-              />
-            </div>
-            {mode === "signup" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Confirm password
-                </label>
-                <input
-                  type={showPw ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={confirmPw}
-                  onChange={(e) => setConfirmPw(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-            )}
-            {error && (
-              <div className="rounded-md border border-red-800/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</div>
-            )}
-            {notice && (
-              <div className="rounded-md border border-emerald-800/60 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
-                {notice}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-md bg-blue-600 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-            >
-              {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
-            </button>
-            {needsConfirm && mode === "login" && (
-              <button
-                type="button"
-                onClick={resend}
-                className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                Didn't get the email? Resend confirmation
-              </button>
-            )}
-          </form>
-        </div>
-        <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-          Your data is stored in your account and protected so only you can read it.
-          <br />
-          Educational tool only, not financial advice.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Social: a connection's portfolio (read-only) ----------
-
-// Compact read-only card for one of a connection's stocks.
 function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, onAdd, onOpen }) {
   const quote = data?.quote;
   const candles = data?.candles;
@@ -3299,6 +2865,7 @@ function FriendPortfolio({ uid, name, stockData, stockInfo, ensureSymbols, mySym
 
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = still checking, null = logged out
+  const [recovering, setRecovering] = useState(false); // opened a password-reset link
   const [saveStatus, setSaveStatus] = useState("saved"); // "saved" | "saving" | "error"
   const [accountError, setAccountError] = useState(null);
   const [accountReload, setAccountReload] = useState(0); // bump to retry loading the account
@@ -3350,6 +2917,16 @@ export default function App() {
     }
   });
   const [benchCandles, setBenchCandles] = useState(null); // SPY, for the performance chart
+  const [keyLoaded, setKeyLoaded] = useState(false); // device key read from storage
+  const [keyGuide, setKeyGuide] = useState(false); // "get your free key" step after sign up
+  const [infoPage, setInfoPage] = useState(null); // "about" | "contact" | "privacy" | "terms" (footer links)
+  const [inviteFrom] = useState(() => {
+    try {
+      return !!(new URLSearchParams(window.location.search).get("invite") || localStorage.getItem("ssd_pending_invite"));
+    } catch (_) {
+      return false;
+    }
+  });
 
   // add-ticker form
   const [symInput, setSymInput] = useState("");
@@ -3378,6 +2955,20 @@ export default function App() {
         } catch (_) {}
         history.replaceState(null, "", window.location.pathname + window.location.hash);
       }
+      // Shared post links (?post=<id>) open that post once you're logged in.
+      const postId = new URLSearchParams(window.location.search).get("post");
+      if (postId && /^\d+$/.test(postId)) {
+        try {
+          localStorage.setItem("ssd_pending_post", postId);
+        } catch (_) {}
+      }
+      // Group invite links (?group=<code>) open that group once you're logged in.
+      const groupCode = new URLSearchParams(window.location.search).get("group");
+      if (groupCode && /^[a-z0-9]{4,32}$/i.test(groupCode)) {
+        try {
+          localStorage.setItem("ssd_pending_group", groupCode);
+        } catch (_) {}
+      }
       // A share link like .../#key=<finnhub key> saves that key on this device,
       // then the key is wiped from the address bar.
       const hashKey = new URLSearchParams(window.location.hash.slice(1)).get("key");
@@ -3392,8 +2983,9 @@ export default function App() {
         setApiKey(DEFAULT_API_KEY);
         storageSet(KEY_APIKEY, DEFAULT_API_KEY);
       }
+      setKeyLoaded(true);
       const savedPage = await storageGet(KEY_PAGE);
-      if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn"].includes(savedPage)) setPage(savedPage);
+      if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn", "glossary"].includes(savedPage)) setPage(savedPage);
     })();
   }, []);
 
@@ -3407,7 +2999,10 @@ export default function App() {
   // auth session: restore on load (Supabase keeps you logged in) and follow log-in/out
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === "PASSWORD_RECOVERY") setRecovering(true);
+      setSession(s ?? null);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -3505,7 +3100,10 @@ export default function App() {
   }
 
   const goToPage = useCallback((p) => {
-    setPage(p);
+    setPage((cur) => {
+      if (cur !== p) window.scrollTo({ top: 0 }); // a new page starts at the top
+      return p;
+    });
     storageSet(KEY_PAGE, p);
   }, []);
 
@@ -3864,6 +3462,121 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId, myProfile?.id]);
 
+  // No market data key on this device yet: use the key of the friend who invited you,
+  // otherwise show the "get your free key" guide once (it can be skipped).
+  useEffect(() => {
+    if (!ready || !userId || !keyLoaded || apiKey) return;
+    let cancelled = false;
+    (async () => {
+      let code = null;
+      try {
+        code = localStorage.getItem("ssd_pending_invite");
+      } catch (_) {}
+      if (code) {
+        try {
+          const k = await inviteKeyFor(code);
+          if (k && !cancelled) {
+            await storageSet(KEY_APIKEY, k);
+            setApiKey(k);
+            setToast("Live prices are on, thanks to the friend who invited you");
+            return;
+          }
+        } catch (_) {}
+      }
+      let skipped = false;
+      try {
+        skipped = localStorage.getItem(`ssd_keyguide_skip_${userId}`) === "1";
+      } catch (_) {}
+      if (!cancelled && !skipped) setKeyGuide(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, userId, keyLoaded, apiKey]);
+
+  // A ticker typed on the front page before signing up is added once you're in.
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let t = null;
+    try {
+      t = localStorage.getItem("ssd_landing_ticker");
+      localStorage.removeItem("ssd_landing_ticker");
+    } catch (_) {}
+    t = (t || "").trim().toUpperCase();
+    if (/^[A-Z0-9.\-]{1,12}$/.test(t)) {
+      if (!watchlist.some((w) => w.symbol === t)) handleAddPick(t);
+      goToPage("watchlist");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
+  // A shared post link opens that post.
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let id = null;
+    let groupCode = null;
+    try {
+      id = localStorage.getItem("ssd_pending_post");
+      localStorage.removeItem("ssd_pending_post");
+      groupCode = localStorage.getItem("ssd_pending_group");
+      localStorage.removeItem("ssd_pending_group");
+    } catch (_) {}
+    if (!id && !groupCode) return;
+    history.replaceState(null, "", window.location.pathname + window.location.hash);
+    goToPage("social");
+    if (groupCode) setSocialRoute({ tab: "groups", groupCode, n: Date.now() });
+    else setSocialRoute({ tab: "post", postId: Number(id), n: Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
+  // game: XP refresh tick, milestone posts, invite practice-money bonus (applied once, tracked in paper.bonusApplied)
+  const [xpTick, setXpTick] = useState(0);
+  const onXpChange = useCallback(() => setXpTick((t) => t + 1), []);
+  const onMilestone = useCallback(
+    (title, detail) => {
+      if (userId) postMilestone(userId, title, detail).catch(() => {});
+    },
+    [userId]
+  );
+  const paperRef = useRef(paper);
+  paperRef.current = paper;
+  const applyInviteBonus = useCallback(
+    (total) => {
+      const p = paperRef.current || newPaper();
+      const applied = p.bonusApplied || 0;
+      if (!total || total <= applied) return;
+      persistPaper({ ...p, cash: p.cash + (total - applied), bonusApplied: total });
+      setToast(`+$${(total - applied).toLocaleString()} practice money from invite rewards`);
+      if (total - applied >= 5000) onMilestone("Invite reward", `+$${(total - applied).toLocaleString()} practice money`);
+    },
+    [persistPaper, onMilestone]
+  );
+  useEffect(() => {
+    if (!ready || !userId) return;
+    myInviteStats()
+      .then((st) => st && applyInviteBonus(practiceBonus({ qualified: st.qualified, invitedBy: !!st.invited_by })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
+  async function saveKeyFromGuide(k) {
+    await storageSet(KEY_APIKEY, k);
+    setApiKey(k);
+    setKeyGuide(false);
+    setToast("Live prices are on");
+  }
+  function skipKeyGuide() {
+    try {
+      localStorage.setItem(`ssd_keyguide_skip_${userId}`, "1");
+    } catch (_) {}
+    setKeyGuide(false);
+  }
+  async function handleDeleteAccount() {
+    clearTimeout(saveTimer.current);
+    accountLoaded.current = false; // stop any pending save from recreating the account
+    await deleteMyAccount(userId);
+  }
+
   // which of your friends own / watch each symbol
   const refreshFriends = useCallback(async () => {
     try {
@@ -3977,8 +3690,9 @@ export default function App() {
 
   function onNotification(n) {
     if (n.kind === "request") goSocial("requests");
-    else if (n.kind === "accepted" || n.kind === "joined") openProfile(n.actor?.id);
-    else if (n.kind === "group_add" || n.kind === "group_post") goSocial("groups", { groupId: n.group_id });
+    else if (["accepted", "joined", "follow", "watch_add", "new_call"].includes(n.kind)) openProfile(n.actor?.id);
+    else if (["reaction", "comment", "reply", "vote"].includes(n.kind) && n.activity_id) goSocial("post", { postId: n.activity_id });
+    else if (n.kind.startsWith("group_") && n.group_id) goSocial("groups", { groupId: n.group_id });
     else if (n.kind === "share" && n.data?.symbol) openStock(n.data.symbol);
     else goSocial("feed");
   }
@@ -4180,7 +3894,9 @@ export default function App() {
     );
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session) return <PublicSite inviteFrom={inviteFrom} />;
+
+  if (recovering) return <NewPasswordScreen email={session.user.email} onDone={() => setRecovering(false)} />;
 
   if (!ready) {
     return (
@@ -4207,6 +3923,8 @@ export default function App() {
     );
   }
 
+  if (keyGuide) return <KeyGuide onSave={saveKeyFromGuide} onSkip={skipKeyGuide} />;
+
   const unread = notifs.filter((n) => !n.read).length;
   const firstSym = watchlist[0]?.symbol;
   const steps = onboarding.dismissed
@@ -4228,7 +3946,8 @@ export default function App() {
   const tabs = [
     { id: "home", label: "Home", count: null },
     { id: "watchlist", label: "My Stocks", count: watchlist.length, also: ["owned", "practice"] },
-    { id: "recommendations", label: "Discover", count: null },
+    { id: "recommendations", label: "Top Picks", count: null },
+    { id: "learn", label: "Learn", count: null, also: ["glossary"] },
     { id: "social", label: "Social", count: null, badge: incomingCount },
   ];
   // Watching / Owned switch shown at the top of My Stocks
@@ -4299,7 +4018,6 @@ export default function App() {
           </nav>
         </header>
 
-        {apiKey && page === "home" && <TodayStrip ownedStats={ownedStats} alerts={alerts} breached={breached} incoming={incomingCount} unread={unread} onNav={goNav} />}
 
         {/* ===================== HOME ===================== */}
         {page === "home" &&
@@ -4330,7 +4048,12 @@ export default function App() {
             onDismissSteps={() => persistOnboarding({ ...onboarding, dismissed: true })}
             stockData={stockData}
             ensureSymbols={ensureSymbols}
+            quoteOf={quoteOf}
+            getQuote={getQuote}
             onToast={setToast}
+            breached={breached}
+            callSlot={<CallOfTheDay uid={userId} ensureSymbols={ensureSymbols} stockData={stockData} onOpenStock={openStock} onXpChange={onXpChange} onMilestone={onMilestone} />}
+            xpSlot={<div className="w-full sm:w-64"><XpCard uid={userId} refreshKey={xpTick} onMilestone={onMilestone} compact /></div>}
           />
         )}
 
@@ -4351,7 +4074,15 @@ export default function App() {
         )}
 
         {/* ===================== LEARN ===================== */}
-        {page === "learn" && <GlossaryPage />}
+        {page === "learn" && <Learn uid={userId} onXp={onXpChange} onGlossary={() => goToPage("glossary")} />}
+        {page === "glossary" && (
+          <div>
+            <button onClick={() => goToPage("learn")} className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-zinc-400 hover:text-zinc-100">
+              <Ic name="chevronLeft" size={16} /> Learn
+            </button>
+            <GlossaryPage />
+          </div>
+        )}
 
         {/* fired price alerts — shown on every page until dismissed */}
         <TriggeredAlertsBanner alerts={alerts} onDismiss={deleteAlert} />
@@ -4437,7 +4168,7 @@ export default function App() {
                 <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
                   Nothing on your watchlist right now. Add a stock above, or check{" "}
                   <button onClick={() => goToPage("recommendations")} className="text-blue-400 hover:underline">
-                    Discover
+                    Top Picks
                   </button>{" "}
                   for ideas.
                 </div>
@@ -4539,6 +4270,9 @@ export default function App() {
             getQuote={getQuote}
             mySymbols={allSymbols}
             onAddToWatchlist={handleAddPick}
+            dailyPicks={pickCache?.ranked?.slice(0, 5)}
+            onAddMany={handleAddMany}
+            renderInvite={() => <InviteRewards uid={userId} apiKey={apiKey} onClaim={applyInviteBonus} />}
             renderPortfolio={(uid, name) => (
               <FriendPortfolio
                 key={uid}
@@ -4556,7 +4290,35 @@ export default function App() {
           />
         )}
 
-        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">Educational tool only, not financial advice.</footer>
+        {infoPage && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-zinc-950">
+            <div className="mx-auto max-w-3xl px-4 py-4">
+              <button onClick={() => setInfoPage(null)} className="mb-2 inline-flex min-h-11 items-center gap-1 text-sm text-zinc-400 hover:text-zinc-100">
+                <Ic name="chevronLeft" /> Back to the app
+              </button>
+              {infoPage === "about" && <AboutPage />}
+              {infoPage === "contact" && <ContactPage />}
+              {infoPage === "privacy" && <PrivacyPage />}
+              {infoPage === "terms" && <TermsPage />}
+            </div>
+          </div>
+        )}
+
+        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">
+          <div className="mb-2 flex flex-wrap justify-center gap-x-4 gap-y-1">
+            {[
+              ["about", "About us"],
+              ["contact", "Contact us"],
+              ["privacy", "Privacy"],
+              ["terms", "Terms"],
+            ].map(([id, label]) => (
+              <button key={id} onClick={() => setInfoPage(id)} className="hover:text-zinc-300">
+                {label}
+              </button>
+            ))}
+          </div>
+          Educational tool only, not financial advice.
+        </footer>
       </div>
 
       <BottomNav page={page} onGo={goToPage} badges={{ social: incomingCount + (unread && !incomingCount ? 0 : 0) }} />
@@ -4579,6 +4341,9 @@ export default function App() {
           onOpenProfile={openProfile}
           onPractice={(symbol, price) => setPracticeModal({ side: "buy", symbol, price })}
           onShare={setShareSymbol}
+          quoteOf={quoteOf}
+          getQuote={getQuote}
+          ensureSymbols={ensureSymbols}
         />
       )}
 
@@ -4593,7 +4358,7 @@ export default function App() {
       />
       <ShareModal open={!!shareSymbol} uid={userId} symbol={shareSymbol} onClose={() => setShareSymbol(null)} onDone={setToast} />
 
-      <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} onDeleteAccount={handleDeleteAccount} />
 
       <AlertModal
         open={!!alertModal}

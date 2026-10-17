@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import Avatar from "../social/Avatar.jsx";
 import Feed, { timeAgoShort } from "../social/Feed.jsx";
 import { acceptRequestFrom, removeConnectionWith, leaderboard, getBadges, postActivity } from "../social/api.js";
-import { DigestCard, EarningsList } from "./portfolio.jsx";
+import { DigestCard, EarningsList, marketStatus } from "./portfolio.jsx";
+import { notifText } from "../social/Notifications.jsx";
+import { Ic } from "./icons.jsx";
+import WeeklyCard from "../game/WeeklyCard.jsx";
 import { GLOSSARY, pickReason } from "./explain.js";
 
 const money = (n) => `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -50,7 +53,7 @@ function Learn({ onGlossary }) {
       <div className="text-base font-semibold text-zinc-100">{l.title}</div>
       <p className="mt-1 text-sm leading-relaxed text-zinc-300">{l.text}</p>
       <button onClick={onGlossary} className="mt-2 text-xs font-medium text-blue-400 hover:underline">
-        Open the full glossary →
+        Take a 5-minute lesson →
       </button>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {LESSONS.map((x, j) => (
@@ -67,29 +70,11 @@ function Learn({ onGlossary }) {
   );
 }
 
-function notifText(n) {
-  const d = n.data || {};
-  const sym = d.symbol ? ` on ${d.symbol}` : "";
-  return (
-    {
-      request: "wants to connect",
-      accepted: "accepted your request",
-      joined: "joined with your invite link ",
-      reaction: `reacted ${d.emoji || ""} to your post${sym}`,
-      comment: `commented${sym}: “${d.body || ""}”`,
-      reply: `also commented${sym}`,
-      vote: `voted on your poll${sym}`,
-      group_add: `added you to the group “${d.name || "a group"}”`,
-      share: `shared ${d.symbol || "a stock"} with you${d.note ? `: “${d.note}”` : ""}`,
-      group_post: `posted in “${d.name || "your group"}”: “${d.body || ""}”`,
-    }[n.kind] || n.kind
-  );
-}
 
 export default function Home({
   uid, name, ownedStats, benchCandles, alerts, notifs, onRefreshNotifs, digest, stockInfo, symbols,
   pickCache, watchlist, onOpenStock, onOpenProfile, onGo, onGoSocial, onAdd, onNotification,
-  steps, onDismissSteps, stockData, ensureSymbols, onToast,
+  steps, onDismissSteps, stockData, ensureSymbols, quoteOf, getQuote, onToast, callSlot, xpSlot, breached = 0,
 }) {
   // snapshot
   const priced = ownedStats.filter((s) => s.value != null);
@@ -119,90 +104,154 @@ export default function Home({
     onRefreshNotifs();
   }
 
+  const date = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const market = marketStatus();
+  const firedToday = firedAlerts.filter((a) => Date.now() - a.triggeredAt < 86_400_000);
+  const attention = [
+    breached > 0 && { key: "br", icon: "stop", tone: "text-red-500 bg-red-500/10", text: `${breached} position${breached === 1 ? " is" : "s are"} below the safety line`, go: () => onGo("owned") },
+    firedToday.length > 0 && { key: "al", icon: "bell", tone: "text-amber-500 bg-amber-500/10", text: `${firedToday.length} price alert${firedToday.length === 1 ? "" : "s"} hit: ${firedToday.map((a) => a.symbol).join(", ")}`, go: () => onGo("watchlist") },
+    requests.length > 0 && { key: "rq", icon: "userPlus", tone: "text-blue-500 bg-blue-500/10", text: `${requests.length} friend request${requests.length === 1 ? "" : "s"} waiting`, go: () => onGoSocial("requests") },
+  ].filter(Boolean);
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-50">
-          {hello}
-          {name ? `, ${name.split(" ")[0]}` : ""} 
-        </h1>
-        <p className="text-sm text-zinc-500">Here's what matters today.</p>
-      </div>
+    <div className="space-y-5">
+      {/* hero: greeting + portfolio snapshot */}
+      <section className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900">
+        <div className="flex flex-wrap items-end justify-between gap-3 px-5 pt-5">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+              <span>{date}</span>
+              <span className="inline-flex items-center gap-1">
+                <span className={`h-1.5 w-1.5 rounded-full ${market === "Market open" ? "bg-emerald-500" : "bg-zinc-600"}`} />
+                {market}
+              </span>
+            </div>
+            <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-zinc-50">
+              {hello}
+              {name ? `, ${name.split(" ")[0]}` : ""}
+            </h1>
+          </div>
+          {xpSlot}
+        </div>
+        <button onClick={() => onGo("owned")} className="mt-4 grid w-full grid-cols-2 gap-px border-t border-zinc-800 bg-zinc-800 text-left sm:grid-cols-4">
+          {[
+            ["Portfolio", priced.length ? money(value) : "—", "text-zinc-50"],
+            ["Today", dayPct != null ? `${signed(dayPct)}` : "—", dayPct == null ? "text-zinc-500" : dayUsd >= 0 ? "text-emerald-500" : "text-red-500", dayPct != null ? `${dayUsd >= 0 ? "+" : "−"}${money(dayUsd)}` : market === "Market open" ? null : "market closed"],
+            ["Total gain", priced.length ? signed(totalPct) : "—", !priced.length ? "text-zinc-500" : total >= 0 ? "text-emerald-500" : "text-red-500", priced.length ? `${total >= 0 ? "+" : "−"}${money(total)}` : null],
+            ["S&P 500 today", spyDay != null ? signed(spyDay) : "—", spyDay == null ? "text-zinc-500" : spyDay >= 0 ? "text-emerald-500" : "text-red-500", "the market"],
+          ].map(([label, v, tone, sub]) => (
+            <div key={label} className="bg-zinc-900 px-5 py-3.5 transition hover:bg-zinc-800/60">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{label}</div>
+              <div className={`font-display text-2xl font-bold tabular-nums ${tone}`}>{v}</div>
+              {sub && <div className="text-xs tabular-nums text-zinc-500">{sub}</div>}
+            </div>
+          ))}
+        </button>
+        {!priced.length && (
+          <div className="border-t border-zinc-800 px-5 py-3 text-sm text-zinc-500">
+            Add the stocks you own in <button onClick={() => onGo("owned")} className="font-semibold text-blue-500 hover:underline">My Stocks</button> to track your portfolio here.
+          </div>
+        )}
+      </section>
+
+      {/* things that need you */}
+      {attention.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attention.map((a) => (
+            <button key={a.key} onClick={a.go} className={`inline-flex min-h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold ${a.tone} hover:opacity-80`}>
+              <Ic name={a.icon} size={15} /> {a.text} <Ic name="chevronRight" size={14} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* every Sunday: your week as a shareable card */}
+      {new Date().getDay() === 0 && <WeeklyCard uid={uid} name={name} onToast={onToast} />}
 
       {steps && <GettingStarted steps={steps} onDismiss={onDismissSteps} />}
 
-      {/* snapshot */}
-      <button onClick={() => onGo("owned")} className="block w-full text-left">
-        <section className="grid grid-cols-2 gap-2 rounded-2xl border border-zinc-800 bg-gradient-to-br from-blue-950/40 to-zinc-900 p-4 sm:grid-cols-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-zinc-500">Portfolio</div>
-            <div className="text-xl font-bold tabular-nums text-zinc-50">{priced.length ? money(value) : "—"}</div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-zinc-500">Today</div>
-            <div className={`text-xl font-bold tabular-nums ${dayUsd >= 0 ? "text-emerald-400" : "text-red-400"}`}>{dayPct != null ? signed(dayPct) : "—"}</div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-zinc-500">Total gain</div>
-            <div className={`text-xl font-bold tabular-nums ${total >= 0 ? "text-emerald-400" : "text-red-400"}`}>{priced.length ? signed(totalPct) : "—"}</div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-zinc-500">S&amp;P 500 today</div>
-            <div className={`text-xl font-bold tabular-nums ${spyDay >= 0 ? "text-emerald-400" : "text-red-400"}`}>{spyDay != null ? signed(spyDay) : "—"}</div>
-          </div>
-          {!priced.length && <div className="col-span-full text-xs text-zinc-500">Buy a stock in My Stocks to see your portfolio here.</div>}
-        </section>
-      </button>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+        {/* main column */}
+        <div className="space-y-5 lg:col-span-3">
+          {callSlot}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="space-y-4">
-          {/* needs attention */}
-          <DigestCard changes={digest.changes} ownedStats={ownedStats} stockInfo={stockInfo} symbols={symbols} onOpenStock={onOpenStock} />
-          {firedAlerts.length > 0 && (
-            <Card title="Price alerts hit">
-              <ul className="space-y-1 text-sm text-zinc-300">
-                {firedAlerts.map((a) => (
-                  <li key={a.id}>
-                    <button onClick={() => onOpenStock(a.symbol)} className="font-semibold text-zinc-100 hover:text-blue-300">{a.symbol}</button> went {a.dir} ${a.price}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-          <EarningsList symbols={symbols} stockInfo={stockInfo} onOpenStock={onOpenStock} />
-          <Learn onGlossary={() => onGo("learn")} />
-        </div>
-
-        <div className="space-y-4">
-          <WeeklyRecap uid={uid} ownedStats={ownedStats} watchlist={watchlist} stockData={stockData} benchCandles={benchCandles} ensureSymbols={ensureSymbols} onShared={onToast} />
-          {/* notifications */}
           <Card
-            title="Notifications"
+            title="Today's top picks"
             action={
-              <button onClick={() => onGoSocial("feed")} className="text-xs text-blue-400 hover:underline">
-                Open Social →
+              <button onClick={() => onGo("recommendations")} className="text-xs font-semibold text-blue-500 hover:underline">
+                See all
               </button>
             }
           >
-            {!requests.length && !others.length ? (
-              <div className="text-sm text-zinc-500">Nothing new.</div>
+            {picks.length ? (
+              <ul className="-mx-1 divide-y divide-zinc-800">
+                {picks.map((p, i) => {
+                  const q = stockData?.[p.symbol]?.quote;
+                  return (
+                    <li key={p.symbol} className="flex items-center gap-3 px-1 py-2.5">
+                      <span className="w-4 text-center text-sm font-bold text-zinc-600">{i + 1}</span>
+                      <button onClick={() => onOpenStock(p.symbol)} className="min-w-0 flex-1 text-left">
+                        <span className="flex items-baseline gap-2">
+                          <span className="font-display text-base font-bold text-zinc-100">{p.symbol}</span>
+                          {q?.dp != null && <span className={`text-xs font-semibold ${q.dp >= 0 ? "text-emerald-500" : "text-red-500"}`}>{signed(q.dp)}</span>}
+                        </span>
+                        <span className="block truncate text-xs text-zinc-500">{pickReason(p) || `Score ${p.score}`}</span>
+                      </button>
+                      <span className="hidden rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-500 sm:inline">{p.score}</span>
+                      <button onClick={() => onAdd(p.symbol)} className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:border-blue-500 hover:text-blue-500">
+                        + Watch
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             ) : (
-              <ul className="space-y-2">
+              <div className="py-2 text-sm text-zinc-500">Today's picks are being prepared. Check Top Picks in a minute.</div>
+            )}
+          </Card>
+
+          <Card
+            title="From people you follow"
+            action={
+              <button onClick={() => onGoSocial("feed")} className="text-xs font-semibold text-blue-500 hover:underline">
+                Open feed
+              </button>
+            }
+          >
+            <Feed uid={uid} limit={3} showComposer={false} onOpenStock={onOpenStock} onOpenProfile={onOpenProfile} quoteOf={quoteOf} getQuote={getQuote} ensureSymbols={ensureSymbols}
+              emptyText="When people you follow post, buy or sell, it shows up here." />
+          </Card>
+        </div>
+
+        {/* side column */}
+        <div className="space-y-5 lg:col-span-2">
+          <DigestCard changes={digest.changes} ownedStats={ownedStats} stockInfo={stockInfo} symbols={symbols} onOpenStock={onOpenStock} />
+
+          {(requests.length > 0 || others.length > 0) && (
+            <Card
+              title="Notifications"
+              action={
+                <button onClick={() => onGoSocial("feed")} className="text-xs font-semibold text-blue-500 hover:underline">
+                  Social
+                </button>
+              }
+            >
+              <ul className="space-y-2.5">
                 {requests.map((n) => (
                   <li key={n.id} className="flex items-center gap-2">
                     <Avatar url={n.actor?.avatar_url} name={n.actor?.full_name} size="xs" />
                     <span className="min-w-0 flex-1 truncate text-sm text-zinc-300">
                       <span className="font-semibold text-zinc-100">{n.actor?.full_name}</span> wants to connect
                     </span>
-                    <button onClick={() => respond(n, true)} className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-500">
+                    <button onClick={() => respond(n, true)} className="rounded-full bg-blue-500 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-600">
                       Accept
                     </button>
-                    <button onClick={() => respond(n, false)} className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800">
+                    <button onClick={() => respond(n, false)} className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:bg-zinc-800">
                       Decline
                     </button>
                   </li>
                 ))}
-                {others.map((n) => (
+                {others.slice(0, 4).map((n) => (
                   <li key={n.id}>
                     <button onClick={() => onNotification(n)} className="flex w-full items-start gap-2 text-left">
                       <Avatar url={n.actor?.avatar_url} name={n.actor?.full_name} size="xs" />
@@ -215,47 +264,12 @@ export default function Home({
                   </li>
                 ))}
               </ul>
-            )}
-          </Card>
+            </Card>
+          )}
 
-          {/* top picks */}
-          <Card
-            title="Today's top picks"
-            action={
-              <button onClick={() => onGo("recommendations")} className="text-xs text-blue-400 hover:underline">
-                See all →
-              </button>
-            }
-          >
-            {picks.length ? (
-              <ul className="divide-y divide-zinc-800">
-                {picks.map((p) => (
-                  <li key={p.symbol} className="flex items-center gap-3 py-2">
-                    <button onClick={() => onOpenStock(p.symbol)} className="w-14 text-left font-semibold text-zinc-100 hover:text-blue-300">{p.symbol}</button>
-                    <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{pickReason(p) || `Score ${p.score}`}</span>
-                    <button onClick={() => onAdd(p.symbol)} className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:border-blue-600 hover:text-blue-300">
-                      + Watch
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-sm text-zinc-500">Today's picks are being prepared — check Discover in a minute.</div>
-            )}
-          </Card>
-
-          {/* friends */}
-          <Card
-            title="From your friends"
-            action={
-              <button onClick={() => onGoSocial("feed")} className="text-xs text-blue-400 hover:underline">
-                See all →
-              </button>
-            }
-          >
-            <Feed uid={uid} limit={3} showComposer={false} onOpenStock={onOpenStock} onOpenProfile={onOpenProfile}
-              emptyText="When your friends buy, sell or post, it shows up here." />
-          </Card>
+          <EarningsList symbols={symbols} stockInfo={stockInfo} onOpenStock={onOpenStock} />
+          <WeeklyRecap uid={uid} ownedStats={ownedStats} watchlist={watchlist} stockData={stockData} benchCandles={benchCandles} ensureSymbols={ensureSymbols} onShared={onToast} />
+          <Learn onGlossary={() => onGo("learn")} />
         </div>
       </div>
     </div>

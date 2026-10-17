@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
-import { markNotificationsRead } from "./api.js";
+import { markNotificationsRead, follow } from "./api.js";
+import { Ic } from "../ui/icons.jsx";
 import { timeAgoShort } from "./Feed.jsx";
 
-function text(n) {
+export function notifText(n) {
   const d = n.data || {};
   const sym = d.symbol ? ` on ${d.symbol}` : "";
   switch (n.kind) {
@@ -13,8 +14,14 @@ function text(n) {
       return "accepted your connection request";
     case "joined":
       return "joined through your invite link — you're now connected ";
+    case "follow":
+      return "started following you";
+    case "watch_add":
+      return `added ${(d.symbols || []).join(", ") || "a stock"} to their watchlist`;
+    case "new_call":
+      return `made today's call: ${d.symbol || "the stock"} ${d.direction === "down" ? "down" : "up"}`;
     case "reaction":
-      return `reacted ${d.emoji || ""} to your post${sym}`;
+      return d.emoji === "❤️" || d.emoji === "❤" ? `liked your post${sym}` : `reacted ${d.emoji || ""} to your post${sym}`;
     case "comment":
       return `commented${sym}: “${d.body || ""}”`;
     case "reply":
@@ -27,9 +34,52 @@ function text(n) {
       return `posted in “${d.name || "your group"}”: “${d.body || ""}”`;
     case "group_add":
       return `added you to the group “${d.name || ""}”`;
+    case "group_join":
+      return `joined your group “${d.name || ""}”`;
+    case "group_request":
+      return `wants to join “${d.name || ""}”${d.note ? `: “${d.note}”` : ""}`;
+    case "group_idea":
+      return `shared a stock idea, ${d.symbol || "a stock"} ${d.stance === "bear" ? "(avoid)" : "(buy)"}, in “${d.name || ""}”. Vote now`;
+    case "group_event":
+      return `scheduled “${d.title || "a meeting"}” in “${d.name || ""}”${d.starts_at ? ` for ${new Date(d.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : ""}`;
     default:
       return n.kind;
   }
+}
+
+const KIND_ICON = {
+  request: ["userPlus", "bg-blue-500"], accepted: ["userCheck", "bg-emerald-500"], joined: ["gift", "bg-emerald-500"],
+  follow: ["userPlus", "bg-blue-500"], reaction: ["heart", "bg-red-500"], comment: ["chat", "bg-blue-500"],
+  reply: ["chat", "bg-zinc-500"], vote: ["poll", "bg-amber-500"], share: ["share", "bg-blue-500"],
+  group_post: ["users", "bg-zinc-500"], group_add: ["users", "bg-emerald-500"], group_join: ["users", "bg-emerald-500"],
+  group_request: ["userPlus", "bg-blue-500"], watch_add: ["eye", "bg-blue-500"], new_call: ["target", "bg-amber-500"], group_idea: ["bulb", "bg-amber-500"], group_event: ["calendar", "bg-emerald-500"],
+};
+
+function FollowBack({ uid, actorId }) {
+  const [state, setState] = useState("idle"); // idle | busy | done
+  if (!actorId) return null;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (state !== "idle") return;
+        setState("busy");
+        try {
+          await follow(uid, actorId);
+          setState("done");
+        } catch (_) {
+          setState("idle");
+        }
+      }}
+      className={`mt-1.5 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+        state === "done" ? "border border-zinc-700 text-zinc-400" : "bg-blue-600 text-white hover:bg-blue-500"
+      }`}
+    >
+      {state === "done" ? "Following" : state === "busy" ? "…" : "Follow back"}
+    </span>
+  );
 }
 
 export default function NotificationsBell({ uid, items, onRefresh, onOpen }) {
@@ -85,10 +135,18 @@ export default function NotificationsBell({ uid, items, onRefresh, onOpen }) {
                 }}
                 className={`flex w-full items-start gap-3 border-b border-zinc-800/60 px-4 py-3 text-left hover:bg-zinc-800/50 ${n.read ? "" : "bg-blue-950/20"}`}
               >
-                <Avatar url={n.actor?.avatar_url} name={n.actor?.full_name} size="xs" />
+                <span className="relative shrink-0">
+                  <Avatar url={n.actor?.avatar_url} name={n.actor?.full_name} size="xs" />
+                  {KIND_ICON[n.kind] && (
+                    <span className={`absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-white ring-2 ring-zinc-900 ${KIND_ICON[n.kind][1]}`}>
+                      <Ic name={KIND_ICON[n.kind][0]} size={10} />
+                    </span>
+                  )}
+                </span>
                 <span className="min-w-0 flex-1 text-sm text-zinc-300">
-                  <span className="font-semibold text-zinc-100">{n.actor?.full_name || "Someone"}</span> {text(n)}
+                  <span className="font-semibold text-zinc-100">{n.actor?.full_name || "Someone"}</span> {notifText(n)}
                   <span className="block text-[11px] text-zinc-600">{timeAgoShort(n.created_at)}</span>
+                  {n.kind === "follow" && <FollowBack uid={uid} actorId={n.actor?.id} />}
                 </span>
                 {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />}
               </button>

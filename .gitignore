@@ -3,3 +3,4 @@ dist
 .DS_Store
 public/candles
 .env.local
+public/track-record.json
