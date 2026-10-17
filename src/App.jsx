@@ -29,6 +29,10 @@ import Home, { GlossaryPage } from "./ui/home.jsx";
 import { PracticePage, PracticeTradeModal, applyPaperTrade, newPaper } from "./ui/practice.jsx";
 import ShareModal from "./ui/share.jsx";
 import { challengeBoard } from "./social/api.js";
+import PublicSite from "./landing/PublicSite.jsx";
+import KeyGuide from "./landing/KeyGuide.jsx";
+import { AboutPage, ContactPage, PrivacyPage, TermsPage } from "./landing/InfoPages.jsx";
+import { inviteKeyFor, deleteMyAccount } from "./social/api.js";
 import { PerformanceChart, TodayStrip, useDigest, DigestCard, EarningsList, DividendsCard, Welcome } from "./ui/portfolio.jsx";
 
 /*
@@ -1844,8 +1848,10 @@ function BottomNav({ page, onGo, badges }) {
   );
 }
 
-function SettingsModal({ open, apiKey, onSave, onClose }) {
+function SettingsModal({ open, apiKey, onSave, onClose, onDeleteAccount }) {
   const [draft, setDraft] = useState(apiKey || "");
+  const [deleting, setDeleting] = useState(null); // null | "confirm" | "busy" | error text
+  const [confirmText, setConfirmText] = useState("");
   useEffect(() => {
     setDraft(apiKey || "");
   }, [apiKey, open]);
@@ -1882,6 +1888,46 @@ function SettingsModal({ open, apiKey, onSave, onClose }) {
             Save
           </button>
         </div>
+        {onDeleteAccount && (
+          <div className="mt-6 border-t border-zinc-800 pt-4">
+            {deleting === null ? (
+              <button onClick={() => setDeleting("confirm")} className="text-sm text-red-400 hover:text-red-300">
+                Delete my account
+              </button>
+            ) : (
+              <div>
+                <p className="mb-2 text-sm text-zinc-300">
+                  This permanently deletes your account, profile, portfolio, posts, comments and photos. It can't be undone. Type <b>DELETE</b> to confirm.
+                </p>
+                <input
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  className="mb-2 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-red-500"
+                />
+                {deleting !== "confirm" && deleting !== "busy" && <p className="mb-2 text-sm text-red-400">{deleting}</p>}
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => (setDeleting(null), setConfirmText(""))} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800">
+                    Keep my account
+                  </button>
+                  <button
+                    disabled={confirmText.trim() !== "DELETE" || deleting === "busy"}
+                    onClick={async () => {
+                      setDeleting("busy");
+                      try {
+                        await onDeleteAccount();
+                      } catch (e) {
+                        setDeleting(e?.message || "Couldn't delete the account. Try again.");
+                      }
+                    }}
+                    className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                  >
+                    {deleting === "busy" ? "Deleting…" : "Delete forever"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3003,6 +3049,16 @@ export default function App() {
     }
   });
   const [benchCandles, setBenchCandles] = useState(null); // SPY, for the performance chart
+  const [keyLoaded, setKeyLoaded] = useState(false); // device key read from storage
+  const [keyGuide, setKeyGuide] = useState(false); // "get your free key" step after sign up
+  const [infoPage, setInfoPage] = useState(null); // "about" | "contact" | "privacy" | "terms" (footer links)
+  const [inviteFrom] = useState(() => {
+    try {
+      return !!(new URLSearchParams(window.location.search).get("invite") || localStorage.getItem("ssd_pending_invite"));
+    } catch (_) {
+      return false;
+    }
+  });
 
   // add-ticker form
   const [symInput, setSymInput] = useState("");
@@ -3031,6 +3087,13 @@ export default function App() {
         } catch (_) {}
         history.replaceState(null, "", window.location.pathname + window.location.hash);
       }
+      // Shared post links (?post=<id>) open that post once you're logged in.
+      const postId = new URLSearchParams(window.location.search).get("post");
+      if (postId && /^\d+$/.test(postId)) {
+        try {
+          localStorage.setItem("ssd_pending_post", postId);
+        } catch (_) {}
+      }
       // A share link like .../#key=<finnhub key> saves that key on this device,
       // then the key is wiped from the address bar.
       const hashKey = new URLSearchParams(window.location.hash.slice(1)).get("key");
@@ -3045,6 +3108,7 @@ export default function App() {
         setApiKey(DEFAULT_API_KEY);
         storageSet(KEY_APIKEY, DEFAULT_API_KEY);
       }
+      setKeyLoaded(true);
       const savedPage = await storageGet(KEY_PAGE);
       if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn"].includes(savedPage)) setPage(savedPage);
     })();
@@ -3517,6 +3581,87 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId, myProfile?.id]);
 
+  // No market data key on this device yet: use the key of the friend who invited you,
+  // otherwise show the "get your free key" guide once (it can be skipped).
+  useEffect(() => {
+    if (!ready || !userId || !keyLoaded || apiKey) return;
+    let cancelled = false;
+    (async () => {
+      let code = null;
+      try {
+        code = localStorage.getItem("ssd_pending_invite");
+      } catch (_) {}
+      if (code) {
+        try {
+          const k = await inviteKeyFor(code);
+          if (k && !cancelled) {
+            await storageSet(KEY_APIKEY, k);
+            setApiKey(k);
+            setToast("Live prices are on, thanks to the friend who invited you");
+            return;
+          }
+        } catch (_) {}
+      }
+      let skipped = false;
+      try {
+        skipped = localStorage.getItem(`ssd_keyguide_skip_${userId}`) === "1";
+      } catch (_) {}
+      if (!cancelled && !skipped) setKeyGuide(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, userId, keyLoaded, apiKey]);
+
+  // A ticker typed on the front page before signing up is added once you're in.
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let t = null;
+    try {
+      t = localStorage.getItem("ssd_landing_ticker");
+      localStorage.removeItem("ssd_landing_ticker");
+    } catch (_) {}
+    t = (t || "").trim().toUpperCase();
+    if (/^[A-Z0-9.\-]{1,12}$/.test(t)) {
+      if (!watchlist.some((w) => w.symbol === t)) handleAddPick(t);
+      goToPage("watchlist");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
+  // A shared post link opens that post.
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let id = null;
+    try {
+      id = localStorage.getItem("ssd_pending_post");
+      localStorage.removeItem("ssd_pending_post");
+    } catch (_) {}
+    if (!id) return;
+    history.replaceState(null, "", window.location.pathname + window.location.hash);
+    goToPage("social");
+    setSocialRoute({ tab: "post", postId: Number(id), n: Date.now() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
+  async function saveKeyFromGuide(k) {
+    await storageSet(KEY_APIKEY, k);
+    setApiKey(k);
+    setKeyGuide(false);
+    setToast("Live prices are on");
+  }
+  function skipKeyGuide() {
+    try {
+      localStorage.setItem(`ssd_keyguide_skip_${userId}`, "1");
+    } catch (_) {}
+    setKeyGuide(false);
+  }
+  async function handleDeleteAccount() {
+    clearTimeout(saveTimer.current);
+    accountLoaded.current = false; // stop any pending save from recreating the account
+    await deleteMyAccount(userId);
+  }
+
   // which of your friends own / watch each symbol
   const refreshFriends = useCallback(async () => {
     try {
@@ -3833,7 +3978,7 @@ export default function App() {
     );
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session) return <PublicSite inviteFrom={inviteFrom} />;
 
   if (!ready) {
     return (
@@ -3859,6 +4004,8 @@ export default function App() {
       </div>
     );
   }
+
+  if (keyGuide) return <KeyGuide onSave={saveKeyFromGuide} onSkip={skipKeyGuide} />;
 
   const unread = notifs.filter((n) => !n.read).length;
   const firstSym = watchlist[0]?.symbol;
@@ -4209,7 +4356,35 @@ export default function App() {
           />
         )}
 
-        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">Educational tool only, not financial advice.</footer>
+        {infoPage && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-zinc-950">
+            <div className="mx-auto max-w-3xl px-4 py-4">
+              <button onClick={() => setInfoPage(null)} className="mb-2 inline-flex min-h-11 items-center gap-1 text-sm text-zinc-400 hover:text-zinc-100">
+                <Ic name="chevronLeft" /> Back to the app
+              </button>
+              {infoPage === "about" && <AboutPage />}
+              {infoPage === "contact" && <ContactPage />}
+              {infoPage === "privacy" && <PrivacyPage />}
+              {infoPage === "terms" && <TermsPage />}
+            </div>
+          </div>
+        )}
+
+        <footer className="mt-10 border-t border-zinc-900 pt-4 text-center text-xs text-zinc-600">
+          <div className="mb-2 flex flex-wrap justify-center gap-x-4 gap-y-1">
+            {[
+              ["about", "About us"],
+              ["contact", "Contact us"],
+              ["privacy", "Privacy"],
+              ["terms", "Terms"],
+            ].map(([id, label]) => (
+              <button key={id} onClick={() => setInfoPage(id)} className="hover:text-zinc-300">
+                {label}
+              </button>
+            ))}
+          </div>
+          Educational tool only, not financial advice.
+        </footer>
       </div>
 
       <BottomNav page={page} onGo={goToPage} badges={{ social: incomingCount + (unread && !incomingCount ? 0 : 0) }} />
@@ -4246,7 +4421,7 @@ export default function App() {
       />
       <ShareModal open={!!shareSymbol} uid={userId} symbol={shareSymbol} onClose={() => setShareSymbol(null)} onDone={setToast} />
 
-      <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} apiKey={apiKey} onSave={handleSaveKey} onClose={() => setSettingsOpen(false)} onDeleteAccount={handleDeleteAccount} />
 
       <AlertModal
         open={!!alertModal}
