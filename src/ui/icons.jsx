@@ -4,6 +4,9 @@ import {
   BookOpen, Lightbulb, MapPin, GraduationCap, Calendar, Flag, Trophy, Target, Flame, MessageCircle,
   PenLine, BarChart3, Link2, Megaphone, Lock, Globe, Mail, TrendingUp, TrendingDown, AlertTriangle,
   Check, X, Sprout, Coins, Brain, Handshake, ShieldAlert, Plus, HelpCircle, LogOut, CircleDot,
+  Heart, Bookmark, Share2, Send, Image, MoreHorizontal, Gift, Star, Crown, Zap, Phone, ArrowRight,
+  ArrowUp, ArrowDown, Copy, Sparkles, Rocket, Shield, KeyRound, Grid3x3, UserPlus, UserCheck,
+  ChevronRight, ChevronLeft, Menu, Award, Medal, Play, Clock, Trash2, Camera, Hash, Repeat2, Smile,
 } from "lucide-react";
 
 const MAP = {
@@ -15,11 +18,17 @@ const MAP = {
   down: TrendingDown, warn: AlertTriangle, check: Check, x: X, sprout: Sprout, coins: Coins,
   brain: Brain, handshake: Handshake, stop: ShieldAlert, plus: Plus, help: HelpCircle, logout: LogOut,
   dot: CircleDot,
+  heart: Heart, bookmark: Bookmark, share: Share2, send: Send, image: Image, more: MoreHorizontal,
+  gift: Gift, star: Star, crown: Crown, zap: Zap, phone: Phone, arrowRight: ArrowRight, arrowUp: ArrowUp,
+  arrowDown: ArrowDown, copy: Copy, sparkles: Sparkles, rocket: Rocket, shield: Shield, key: KeyRound,
+  grid: Grid3x3, userPlus: UserPlus, userCheck: UserCheck, chevronRight: ChevronRight, chevronLeft: ChevronLeft,
+  menu: Menu, award: Award, medal: Medal, play: Play, clock: Clock, trash: Trash2, camera: Camera,
+  hash: Hash, repost: Repeat2, smile: Smile,
 };
 
-export function Ic({ name, size = 16, className = "" }) {
+export function Ic({ name, size = 16, className = "", fill }) {
   const C = MAP[name] || CircleDot;
-  return <C size={size} strokeWidth={1.75} className={`inline-block shrink-0 align-[-0.15em] ${className}`} aria-hidden="true" />;
+  return <C size={size} strokeWidth={1.75} fill={fill || "none"} className={`inline-block shrink-0 align-[-0.15em] ${className}`} aria-hidden="true" />;
 }
 
 // Icons used as data (signal rows, digest items, badges) are stored as names; this renders them.
