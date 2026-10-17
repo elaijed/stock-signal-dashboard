@@ -135,9 +135,9 @@ export default function Home({
         <button onClick={() => onGo("owned")} className="mt-4 grid w-full grid-cols-2 gap-px border-t border-zinc-800 bg-zinc-800 text-left sm:grid-cols-4">
           {[
             ["Portfolio", priced.length ? money(value) : "—", "text-zinc-50"],
-            ["Today", dayPct != null ? `${signed(dayPct)}` : "—", dayUsd >= 0 ? "text-emerald-500" : "text-red-500", dayPct != null ? `${dayUsd >= 0 ? "+" : "−"}${money(dayUsd)}` : null],
-            ["Total gain", priced.length ? signed(totalPct) : "—", total >= 0 ? "text-emerald-500" : "text-red-500", priced.length ? `${total >= 0 ? "+" : "−"}${money(total)}` : null],
-            ["S&P 500 today", spyDay != null ? signed(spyDay) : "—", spyDay >= 0 ? "text-emerald-500" : "text-red-500", "the market"],
+            ["Today", dayPct != null ? `${signed(dayPct)}` : "—", dayPct == null ? "text-zinc-500" : dayUsd >= 0 ? "text-emerald-500" : "text-red-500", dayPct != null ? `${dayUsd >= 0 ? "+" : "−"}${money(dayUsd)}` : market === "Market open" ? null : "market closed"],
+            ["Total gain", priced.length ? signed(totalPct) : "—", !priced.length ? "text-zinc-500" : total >= 0 ? "text-emerald-500" : "text-red-500", priced.length ? `${total >= 0 ? "+" : "−"}${money(total)}` : null],
+            ["S&P 500 today", spyDay != null ? signed(spyDay) : "—", spyDay == null ? "text-zinc-500" : spyDay >= 0 ? "text-emerald-500" : "text-red-500", "the market"],
           ].map(([label, v, tone, sub]) => (
             <div key={label} className="bg-zinc-900 px-5 py-3.5 transition hover:bg-zinc-800/60">
               <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">{label}</div>
