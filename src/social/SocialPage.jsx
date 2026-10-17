@@ -40,45 +40,8 @@ function Empty({ children }) {
   return <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">{children}</div>;
 }
 
-// Personal invite link (optionally carrying your market-data key so friends can use the app right away)
-function InviteBox({ me, apiKey }) {
-  const [withKey, setWithKey] = useState(true);
-  const [copied, setCopied] = useState(false);
-  if (!me?.invite_code) return null;
-  const base = `${window.location.origin}${window.location.pathname}?invite=${me.invite_code}`;
-  const link = withKey && apiKey ? `${base}#key=${apiKey}` : base;
-  async function copy() {
-    try {
-      if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
-        await navigator.share({ title: "Join me on Stock Signals", text: "Follow my portfolio and stock picks:", url: link });
-      } else {
-        await navigator.clipboard.writeText(link);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch (_) {}
-  }
-  return (
-    <div className="rounded-xl border border-blue-900/60 bg-blue-950/20 p-3">
-      <div className="text-sm font-semibold text-blue-200">Invite friends</div>
-      <div className="mb-2 text-xs text-blue-300/70">Anyone who signs up with your link is connected with you automatically.</div>
-      <div className="flex gap-2">
-        <input readOnly value={link} onFocus={(e) => e.target.select()} className="min-w-0 flex-1 truncate rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300" />
-        <button onClick={copy} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500">
-          {copied ? "Copied ✓" : "Copy link"}
-        </button>
-      </div>
-      {apiKey && (
-        <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-          <input type="checkbox" checked={withKey} onChange={(e) => setWithKey(e.target.checked)} /> Include my market-data key so prices work for them right away (only share with people you trust)
-        </label>
-      )}
-    </div>
-  );
-}
-
 export default function SocialPage({
-  uid, email, counts, renderPortfolio, onNetwork, route, onProfile, apiKey,
+  uid, email, counts, renderPortfolio, renderInvite, onNetwork, route, onProfile, apiKey,
   onOpenStock, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist,
 }) {
   const [tab, setTab] = useState(route?.tab || "feed");
@@ -352,7 +315,7 @@ export default function SocialPage({
       )}
       {showFriends && (
         <div className="space-y-4">
-          <InviteBox me={me} apiKey={apiKey} />
+          {renderInvite?.()}
           <div className="relative">
             <span className="absolute left-3 top-2.5 text-zinc-500"><Ic name="search" /></span>
             <input
@@ -476,7 +439,7 @@ export default function SocialPage({
         </div>
       )}
 
-      {tab === "me" && <div className="mb-3"><InviteBox me={me} apiKey={apiKey} /></div>}
+      {tab === "me" && renderInvite && <div className="mb-3">{renderInvite()}</div>}
       {tab === "me" && (
         <ProfileView profile={{ ...me, relation: "self", member_since: me.created_at, ...(counts || {}) }} preview>
           <div className="mt-3 flex justify-end">

@@ -31,8 +31,11 @@ import ShareModal from "./ui/share.jsx";
 import { challengeBoard } from "./social/api.js";
 import PublicSite from "./landing/PublicSite.jsx";
 import KeyGuide from "./landing/KeyGuide.jsx";
+import CallOfTheDay from "./game/CallOfTheDay.jsx";
+import XpCard from "./game/XpCard.jsx";
+import InviteRewards, { practiceBonus } from "./game/InviteRewards.jsx";
 import { AboutPage, ContactPage, PrivacyPage, TermsPage } from "./landing/InfoPages.jsx";
-import { inviteKeyFor, deleteMyAccount } from "./social/api.js";
+import { inviteKeyFor, deleteMyAccount, postMilestone, myInviteStats } from "./social/api.js";
 import { PerformanceChart, TodayStrip, useDigest, DigestCard, EarningsList, DividendsCard, Welcome } from "./ui/portfolio.jsx";
 
 /*
@@ -2561,202 +2564,6 @@ function TopPicksSection({ cache, progress, watchlist, onAdd, onOpen }) {
 
 // ---------- login / sign-up ----------
 
-function AuthScreen() {
-  const [mode, setMode] = useState("login"); // "login" | "signup"
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
-  const [needsConfirm, setNeedsConfirm] = useState(false);
-
-  const switchMode = (m) => {
-    setMode(m);
-    setError(null);
-    setNotice(null);
-    setConfirmPw("");
-  };
-
-  async function submit(e) {
-    e.preventDefault();
-    setError(null);
-    setNotice(null);
-    const em = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return setError("Enter a valid email address.");
-    if (password.length < 8) return setError("Password must be at least 8 characters.");
-    if (mode === "signup" && password !== confirmPw) return setError("Passwords don't match.");
-    setBusy(true);
-    try {
-      if (mode === "login") {
-        const { error: err } = await supabase.auth.signInWithPassword({ email: em, password });
-        if (err) {
-          if (/confirm/i.test(err.message)) {
-            setNeedsConfirm(true);
-            setError("Your email isn't confirmed yet — click the link we emailed you, then log in.");
-          } else if (/invalid login credentials/i.test(err.message)) {
-            setError("Wrong email or password.");
-          } else {
-            setError(err.message);
-          }
-        }
-        // on success, App's auth listener swaps this screen for the dashboard
-      } else {
-        const { data, error: err } = await supabase.auth.signUp({
-          email: em,
-          password,
-          options: { emailRedirectTo: window.location.origin + window.location.pathname },
-        });
-        if (err) {
-          setError(err.message);
-        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          // Supabase answers this way (no error) when the email is already registered
-          setError("An account with this email already exists — log in instead.");
-          setMode("login");
-        } else if (!data.session) {
-          setNeedsConfirm(true);
-          setNotice(
-            `Account created! We emailed a confirmation link to ${em}. Click it (if the page it opens doesn't load, that's fine — your account is still confirmed), then come back here and log in.`
-          );
-          setMode("login");
-          setPassword("");
-          setConfirmPw("");
-        }
-      }
-    } catch (err) {
-      setError(err?.message || "Something went wrong — check your connection and try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resend() {
-    setError(null);
-    const em = email.trim();
-    if (!em) return setError("Enter your email above first.");
-    const { error: err } = await supabase.auth.resend({
-      type: "signup",
-      email: em,
-      options: { emailRedirectTo: window.location.origin + window.location.pathname },
-    });
-    if (err) setError(err.message);
-    else setNotice(`Confirmation email re-sent to ${em}.`);
-  }
-
-  const inputCls =
-    "w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-blue-500";
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 py-10 font-sans text-zinc-200">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-zinc-50">Stock Signal Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500">Your watchlist, positions and alerts — saved to your account.</p>
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl">
-          <div className="mb-5 flex gap-1 rounded-lg bg-zinc-800/60 p-1">
-            {[
-              ["login", "Log in"],
-              ["signup", "Sign up"],
-            ].map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => switchMode(m)}
-                className={`flex-1 rounded-md py-1.5 text-sm font-medium transition ${
-                  mode === m ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <form onSubmit={submit} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">Email</label>
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-xs font-medium uppercase tracking-wider text-zinc-500">Password</label>
-                <button
-                  type="button"
-                  onClick={() => setShowPw((s) => !s)}
-                  className="text-[11px] text-zinc-500 hover:text-zinc-300"
-                >
-                  {showPw ? "Hide" : "Show"}
-                </button>
-              </div>
-              <input
-                type={showPw ? "text" : "password"}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === "signup" ? "At least 8 characters" : ""}
-                className={inputCls}
-              />
-            </div>
-            {mode === "signup" && (
-              <div>
-                <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Confirm password
-                </label>
-                <input
-                  type={showPw ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={confirmPw}
-                  onChange={(e) => setConfirmPw(e.target.value)}
-                  className={inputCls}
-                />
-              </div>
-            )}
-            {error && (
-              <div className="rounded-md border border-red-800/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">{error}</div>
-            )}
-            {notice && (
-              <div className="rounded-md border border-emerald-800/60 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-300">
-                {notice}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-md bg-blue-600 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
-            >
-              {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
-            </button>
-            {needsConfirm && mode === "login" && (
-              <button
-                type="button"
-                onClick={resend}
-                className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                Didn't get the email? Resend confirmation
-              </button>
-            )}
-          </form>
-        </div>
-        <p className="mt-4 text-center text-[11px] leading-relaxed text-zinc-600">
-          Your data is stored in your account and protected so only you can read it.
-          <br />
-          Educational tool only, not financial advice.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ---------- Social: a connection's portfolio (read-only) ----------
-
-// Compact read-only card for one of a connection's stocks.
 function FriendHoldingCard({ item, data, info, showDollars, showGain, inMyList, onAdd, onOpen }) {
   const quote = data?.quote;
   const candles = data?.candles;
@@ -3644,6 +3451,36 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId]);
 
+  // game: XP refresh tick, milestone posts, invite practice-money bonus (applied once, tracked in paper.bonusApplied)
+  const [xpTick, setXpTick] = useState(0);
+  const onXpChange = useCallback(() => setXpTick((t) => t + 1), []);
+  const onMilestone = useCallback(
+    (title, detail) => {
+      if (userId) postMilestone(userId, title, detail).catch(() => {});
+    },
+    [userId]
+  );
+  const paperRef = useRef(paper);
+  paperRef.current = paper;
+  const applyInviteBonus = useCallback(
+    (total) => {
+      const p = paperRef.current || newPaper();
+      const applied = p.bonusApplied || 0;
+      if (!total || total <= applied) return;
+      persistPaper({ ...p, cash: p.cash + (total - applied), bonusApplied: total });
+      setToast(`+$${(total - applied).toLocaleString()} practice money from invite rewards`);
+      if (total - applied >= 5000) onMilestone("Invite reward", `+$${(total - applied).toLocaleString()} practice money`);
+    },
+    [persistPaper, onMilestone]
+  );
+  useEffect(() => {
+    if (!ready || !userId) return;
+    myInviteStats()
+      .then((st) => st && applyInviteBonus(practiceBonus({ qualified: st.qualified, invitedBy: !!st.invited_by })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, userId]);
+
   async function saveKeyFromGuide(k) {
     await storageSet(KEY_APIKEY, k);
     setApiKey(k);
@@ -4107,6 +3944,12 @@ export default function App() {
             <Welcome hasKey={!!apiKey} onAdd={(s) => (handleAddPick(s), goToPage("watchlist"))} onOpenSettings={() => setSettingsOpen(true)} />
           ) : null)}
         {page === "home" && (
+          <div className="mb-4 grid gap-4 md:grid-cols-2">
+            <CallOfTheDay uid={userId} ensureSymbols={ensureSymbols} stockData={stockData} onOpenStock={openStock} onXpChange={onXpChange} onMilestone={onMilestone} />
+            <XpCard uid={userId} refreshKey={xpTick} onMilestone={onMilestone} compact />
+          </div>
+        )}
+        {page === "home" && (
           <Home
             uid={userId}
             name={myProfile?.full_name}
@@ -4339,6 +4182,7 @@ export default function App() {
             getQuote={getQuote}
             mySymbols={allSymbols}
             onAddToWatchlist={handleAddPick}
+            renderInvite={() => <InviteRewards uid={userId} apiKey={apiKey} onClaim={applyInviteBonus} />}
             renderPortfolio={(uid, name) => (
               <FriendPortfolio
                 key={uid}
