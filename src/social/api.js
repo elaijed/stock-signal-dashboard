@@ -351,3 +351,18 @@ export async function deleteMyAccount(uid) {
   check(await supabase.rpc("delete_my_account"));
   await supabase.auth.signOut();
 }
+
+// ---------- learn, weekly card, copy watchlist, top callers (supabase/008_learn_watch_callers.sql) ----------
+export async function myLessons(uid) {
+  return check(await supabase.from("lesson_progress").select("lesson_id, score, completed_at").eq("user_id", uid)) || [];
+}
+export async function completeLesson(uid, lessonId, score) {
+  check(await supabase.from("lesson_progress").upsert({ user_id: uid, lesson_id: lessonId, score: Math.round(score) }));
+}
+export const weeklyRecap = async () => check(await supabase.rpc("weekly_recap"));
+export const watchlistOf = async (uid) => check(await supabase.rpc("watchlist_of", { uid }));
+export async function subscribeWatchlist(myId, target, on) {
+  if (on) check(await supabase.from("watch_subs").insert({ subscriber: myId, target }));
+  else check(await supabase.from("watch_subs").delete().eq("subscriber", myId).eq("target", target));
+}
+export const topCallers = async () => check(await supabase.rpc("top_callers")) || [];
