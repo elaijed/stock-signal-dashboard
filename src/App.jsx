@@ -3690,7 +3690,7 @@ export default function App() {
 
   function onNotification(n) {
     if (n.kind === "request") goSocial("requests");
-    else if (n.kind === "accepted" || n.kind === "joined" || n.kind === "follow") openProfile(n.actor?.id);
+    else if (["accepted", "joined", "follow", "watch_add", "new_call"].includes(n.kind)) openProfile(n.actor?.id);
     else if (["reaction", "comment", "reply", "vote"].includes(n.kind) && n.activity_id) goSocial("post", { postId: n.activity_id });
     else if (n.kind.startsWith("group_") && n.group_id) goSocial("groups", { groupId: n.group_id });
     else if (n.kind === "share" && n.data?.symbol) openStock(n.data.symbol);
@@ -4271,6 +4271,7 @@ export default function App() {
             mySymbols={allSymbols}
             onAddToWatchlist={handleAddPick}
             dailyPicks={pickCache?.ranked?.slice(0, 5)}
+            onAddMany={handleAddMany}
             renderInvite={() => <InviteRewards uid={userId} apiKey={apiKey} onClaim={applyInviteBonus} />}
             renderPortfolio={(uid, name) => (
               <FriendPortfolio

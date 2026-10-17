@@ -16,6 +16,10 @@ export function notifText(n) {
       return "joined through your invite link — you're now connected ";
     case "follow":
       return "started following you";
+    case "watch_add":
+      return `added ${(d.symbols || []).join(", ") || "a stock"} to their watchlist`;
+    case "new_call":
+      return `made today's call: ${d.symbol || "the stock"} ${d.direction === "down" ? "down" : "up"}`;
     case "reaction":
       return d.emoji === "❤️" || d.emoji === "❤" ? `liked your post${sym}` : `reacted ${d.emoji || ""} to your post${sym}`;
     case "comment":
@@ -48,7 +52,7 @@ const KIND_ICON = {
   follow: ["userPlus", "bg-blue-500"], reaction: ["heart", "bg-red-500"], comment: ["chat", "bg-blue-500"],
   reply: ["chat", "bg-zinc-500"], vote: ["poll", "bg-amber-500"], share: ["share", "bg-blue-500"],
   group_post: ["users", "bg-zinc-500"], group_add: ["users", "bg-emerald-500"], group_join: ["users", "bg-emerald-500"],
-  group_request: ["userPlus", "bg-blue-500"], group_idea: ["bulb", "bg-amber-500"], group_event: ["calendar", "bg-emerald-500"],
+  group_request: ["userPlus", "bg-blue-500"], watch_add: ["eye", "bg-blue-500"], new_call: ["target", "bg-amber-500"], group_idea: ["bulb", "bg-amber-500"], group_event: ["calendar", "bg-emerald-500"],
 };
 
 function FollowBack({ uid, actorId }) {

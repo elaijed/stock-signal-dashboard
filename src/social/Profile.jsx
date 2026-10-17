@@ -11,7 +11,7 @@ import { fetchFeed } from "./Feed.jsx";
 import { BANNERS } from "./constants.js";
 import {
   getProfile, followInfo, followList, follow, unfollow, removeFollower, getBadges, savedFeed, setAccountPublic,
-  sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, reportUser,
+  sendRequest, acceptRequestFrom, removeConnectionWith, blockUser, reportUser, watchlistOf, subscribeWatchlist,
 } from "./api.js";
 import {
   useSocial, useEnsure, callRecord, friendly, compact, firstName, Sheet, ActionList, Switch, Skeleton, EmptyState,
@@ -190,6 +190,64 @@ function ConnectControls({ p, uid, onChanged }) {
         </div>
       </Sheet>
     </>
+  );
+}
+
+// Their stocks, one tap to copy, and a ping when they add something
+function CopyWatchlist({ id, name }) {
+  const { uid, mySymbols, onAddMany, onOpenStock, toast } = useSocial();
+  const [w, setW] = useState(undefined);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    watchlistOf(id).then(setW).catch(() => setW(null));
+  }, [id]);
+  if (!w || !w.symbols?.length) return null;
+  const mine = new Set(mySymbols || []);
+  const fresh = w.symbols.filter((s) => !mine.has(s));
+  async function toggleSub() {
+    setBusy(true);
+    try {
+      await subscribeWatchlist(uid, id, !w.subscribed);
+      setW({ ...w, subscribed: !w.subscribed });
+      toast?.(w.subscribed ? "Notifications off" : `We'll ping you when ${firstName(name)} adds a stock`);
+    } catch (e) {
+      toast?.(friendly(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-base font-bold text-zinc-100">{firstName(name)}'s watchlist</h3>
+          <p className="text-xs text-zinc-500">
+            {w.symbols.length} stock{w.symbols.length === 1 ? "" : "s"}
+            {fresh.length < w.symbols.length ? ` · ${w.symbols.length - fresh.length} already on yours` : ""}
+          </p>
+        </div>
+        <button onClick={toggleSub} disabled={busy} aria-pressed={w.subscribed}
+          className={`ss-tap inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold ${
+            w.subscribed ? "border-blue-500 bg-blue-500/10 text-blue-500" : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+          }`}>
+          <Ic name="bell" size={14} fill={w.subscribed ? "currentColor" : undefined} /> {w.subscribed ? "Pinging you" : "Ping me on adds"}
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {w.symbols.slice(0, 24).map((s) => (
+          <button key={s} onClick={() => onOpenStock?.(s)}
+            className={`rounded-full border px-2.5 py-1 text-xs font-bold ${mine.has(s) ? "border-zinc-800 text-zinc-500" : "border-zinc-700 text-zinc-200 hover:border-blue-500"}`}>
+            {s}
+          </button>
+        ))}
+        {w.symbols.length > 24 && <span className="px-1 py-1 text-xs text-zinc-500">+{w.symbols.length - 24} more</span>}
+      </div>
+      {onAddMany && (
+        <button disabled={!fresh.length} onClick={() => onAddMany(fresh)} className={`${btn.primary} mt-3 w-full`}>
+          <Ic name="copy" size={16} /> {fresh.length ? `Copy ${fresh.length === w.symbols.length ? "all" : fresh.length + " new"} to my watchlist` : "You already watch all of these"}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -404,6 +462,7 @@ export default function CreatorProfile({ profileId, self = false, me, onBack, on
       </section>
 
       {self && renderInvite && <div>{renderInvite()}</div>}
+      {!self && <CopyWatchlist id={id} name={p.full_name} />}
 
       {/* tabs */}
       <div className="sticky top-0 z-10 -mx-4 flex border-b border-zinc-800 bg-zinc-950/95 px-4 sm:mx-0 sm:px-0">

@@ -30,7 +30,7 @@ function routeSection(t) {
 
 export default function SocialPage({
   uid, email, counts, renderPortfolio, renderInvite, onNetwork, route, onProfile,
-  onOpenStock, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist, dailyPicks,
+  onOpenStock, ensureSymbols, quoteOf, getQuote, mySymbols, onAddToWatchlist, onAddMany, dailyPicks,
 }) {
   const [tab, setTab] = useState(routeSection(route?.tab) || "feed");
   const [mode, setMode] = useState("foryou");
@@ -113,7 +113,7 @@ export default function SocialPage({
 
   const ctx = {
     uid, me, quoteOf, getQuote, ensureSymbols, onOpenStock, onOpenProfile: openProfile, onOpenPost: openPost, toast,
-    onEditPrivacy: () => setEditing(true), mySymbols, onAddToWatchlist,
+    onEditPrivacy: () => setEditing(true), mySymbols, onAddToWatchlist, onAddMany,
   };
   const wrap = (node) => (
     <SocialCtx.Provider value={ctx}>

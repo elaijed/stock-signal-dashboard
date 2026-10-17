@@ -8,7 +8,7 @@ import { Burst, GameStyles, store } from "../game/fx.jsx";
 import { levelFor } from "../game/levels.js";
 import WeeklyCard from "../game/WeeklyCard.jsx";
 import { Sheet, Skeleton, EmptyState, TickerMono, btn, inputCls, firstName, signedPct, money, friendly, isMissingFn, useSocial } from "./ui.jsx";
-import { leaderboard, challengeBoard, enterChallenge, postActivity, updateMyProfile, practiceLeaderboard, gameBoard } from "./api.js";
+import { leaderboard, challengeBoard, enterChallenge, postActivity, updateMyProfile, practiceLeaderboard, gameBoard, topCallers, follow, unfollow } from "./api.js";
 
 const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const monthName = (d = new Date()) => d.toLocaleDateString("en-US", { month: "long" });
@@ -402,6 +402,77 @@ function PastWinners({ quoteOf, ensureSymbols, stockData, onOpenProfile }) {
   );
 }
 
+// ---------- top callers: best Call of the Day records, follow to get pinged on their calls ----------
+function TopCallers({ uid, onOpenProfile }) {
+  const { toast } = useSocial();
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    topCallers().then(setRows).catch(() => setRows([]));
+  }, []);
+  async function toggle(r) {
+    const on = !r.i_follow;
+    setRows((list) => list.map((x) => (x.user?.id === r.user?.id ? { ...x, i_follow: on } : x)));
+    try {
+      await (on ? follow(uid, r.user.id) : unfollow(uid, r.user.id));
+      toast?.(on ? `Following ${firstName(r.user?.full_name)}. You'll get a ping on every call.` : "Unfollowed");
+    } catch (e) {
+      setRows((list) => list.map((x) => (x.user?.id === r.user?.id ? { ...x, i_follow: !on } : x)));
+      toast?.(friendly(e));
+    }
+  }
+  const list = (rows || []).filter((r) => !r.me || r.scored >= 3);
+  return (
+    <section className="rounded-3xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5">
+      <div className="mb-3">
+        <h3 className="flex items-center gap-2 font-display text-xl font-bold text-zinc-100">
+          <Ic name="flame" size={20} className="text-amber-500" fill="currentColor" /> Top callers
+        </h3>
+        <p className="text-sm text-zinc-500">The best Call of the Day records on signals. (at least 3 results). Follow one to get a ping every time they make a call.</p>
+      </div>
+      {rows === null ? (
+        <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
+      ) : list.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-700 p-6 text-center text-sm text-zinc-500">
+          No one has 3 scored calls yet. Make yours on Home and you could be first on this list.
+        </div>
+      ) : (
+        <ol className="space-y-1.5">
+          {list.map((r, i) => {
+            const rate = r.scored ? Math.round((r.wins / r.scored) * 100) : 0;
+            return (
+              <li key={r.user?.id || i} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${r.me ? "bg-blue-500/10 ring-1 ring-blue-500/40" : "bg-zinc-800/40"}`}>
+                <span className={`w-6 text-center font-display text-sm font-bold ${i < 3 ? "text-amber-500" : "text-zinc-500"}`}>{i + 1}</span>
+                <button onClick={() => !r.me && onOpenProfile?.(r.user?.id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                  <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size="xs" />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-zinc-100">{r.me ? "You" : r.user?.full_name}</span>
+                      <Flair r={r} />
+                    </span>
+                    <span className="block text-xs text-zinc-500">
+                      {r.wins}/{r.scored} right · {r.month_wins} this month
+                    </span>
+                  </span>
+                </button>
+                <span className={`text-right font-display text-lg font-bold tabular-nums ${rate >= 60 ? "text-emerald-500" : rate >= 50 ? "text-zinc-100" : "text-red-500"}`}>{rate}%</span>
+                {!r.me &&
+                  (r.public ? (
+                    <button onClick={() => toggle(r)}
+                      className={`ss-tap min-h-9 shrink-0 rounded-full px-3.5 text-xs font-bold ${r.i_follow ? "border border-zinc-700 text-zinc-300" : "bg-blue-500 text-white hover:bg-blue-600"}`}>
+                      {r.i_follow ? "Following" : "Follow"}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] text-zinc-500">Friend</span>
+                  ))}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 // ---------- page ----------
 const TABS = [
   { id: "challenge", label: "Challenge", icon: "trophy" },
@@ -576,11 +647,12 @@ export default function Compete({ uid, me, setMe, ensureSymbols, quoteOf, getQuo
         </>
       )}
 
+      {tab === "calls" && <TopCallers uid={uid} onOpenProfile={onOpenProfile} />}
       {tab === "calls" && (
         <Board
           board="calls" uid={uid} onOpenProfile={onOpenProfile}
-          title="Call of the Day"
-          blurb={`Most correct up/down calls in ${monthName()}. Ties go to the better hit rate.`}
+          title="You and your friends"
+          blurb={`Most correct Call of the Day picks in ${monthName()}. Ties go to the better hit rate.`}
           rows={gameErr ? [] : calls}
           fmt={(r) => `${r.value} win${r.value === 1 ? "" : "s"}`}
           sub={(r) => (r.acc == null ? `${r.calls} calls` : `${Math.round(r.acc * 100)}% right · ${r.calls} calls`)}
