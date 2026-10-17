@@ -144,6 +144,7 @@ export async function markNotificationsRead(uid) {
 // ---------- friends' stocks / competition ----------
 export const networkSymbols = async () => check(await supabase.rpc("network_symbols")) || [];
 export const leaderboard = async () => check(await supabase.rpc("leaderboard")) || [];
+export const gameBoard = async () => check(await supabase.rpc("game_board")) || [];
 export const challengeBoard = async (month) => check(await supabase.rpc("challenge_board", { m: month })) || [];
 export async function enterChallenge(uid, month, symbols, startPrices) {
   check(await supabase.from("challenge_entries").upsert({ user_id: uid, month, symbols, start_prices: startPrices }));

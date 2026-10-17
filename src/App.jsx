@@ -3098,7 +3098,10 @@ export default function App() {
   }
 
   const goToPage = useCallback((p) => {
-    setPage(p);
+    setPage((cur) => {
+      if (cur !== p) window.scrollTo({ top: 0 }); // a new page starts at the top
+      return p;
+    });
     storageSet(KEY_PAGE, p);
   }, []);
 

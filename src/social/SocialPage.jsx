@@ -184,7 +184,10 @@ export default function SocialPage({
         {tabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              if (t.id !== tab) window.scrollTo({ top: 0 });
+              setTab(t.id);
+            }}
             className={`ss-tap shrink-0 grow whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition sm:px-3 sm:text-sm ${
               tab === t.id ? "bg-zinc-100 text-zinc-950" : "text-zinc-400 hover:text-zinc-200"
             }`}
@@ -248,7 +251,7 @@ export default function SocialPage({
         <Groups key={groupRoute || groupCode ? `g-${route?.n}` : "groups"} {...shared} openGroupId={groupRoute} inviteCode={groupCode} onJoinChallenge={() => setTab("compete")} />
       )}
 
-      {tab === "compete" && <Compete {...shared} me={me} setMe={updateMe} />}
+      {tab === "compete" && <Compete {...shared} me={me} setMe={updateMe} dailyPicks={picks} />}
 
       {tab === "me" && (
         <CreatorProfile self me={me} onEdit={() => setEditing(true)} onMeChanged={updateMe} renderInvite={renderInvite}
