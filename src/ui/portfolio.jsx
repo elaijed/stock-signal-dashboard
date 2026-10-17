@@ -136,7 +136,7 @@ export function PerformanceChart({ owned, stockData, benchCandles }) {
 
 // ---------------------------------------------------------------------------
 // "Today" strip: one line of what matters right now.
-function marketStatus() {
+export function marketStatus() {
   const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day = et.getDay();
   const mins = et.getHours() * 60 + et.getMinutes();

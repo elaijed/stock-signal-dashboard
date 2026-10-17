@@ -4,7 +4,7 @@ import { markNotificationsRead, follow } from "./api.js";
 import { Ic } from "../ui/icons.jsx";
 import { timeAgoShort } from "./Feed.jsx";
 
-function text(n) {
+export function notifText(n) {
   const d = n.data || {};
   const sym = d.symbol ? ` on ${d.symbol}` : "";
   switch (n.kind) {
@@ -30,6 +30,14 @@ function text(n) {
       return `posted in “${d.name || "your group"}”: “${d.body || ""}”`;
     case "group_add":
       return `added you to the group “${d.name || ""}”`;
+    case "group_join":
+      return `joined your group “${d.name || ""}”`;
+    case "group_request":
+      return `wants to join “${d.name || ""}”${d.note ? `: “${d.note}”` : ""}`;
+    case "group_idea":
+      return `pitched ${d.symbol || "a stock"} ${d.stance === "bear" ? "(avoid)" : "(buy)"} in “${d.name || ""}”. Vote now`;
+    case "group_event":
+      return `scheduled “${d.title || "a meeting"}” in “${d.name || ""}”${d.starts_at ? ` for ${new Date(d.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : ""}`;
     default:
       return n.kind;
   }
@@ -39,7 +47,8 @@ const KIND_ICON = {
   request: ["userPlus", "bg-blue-500"], accepted: ["userCheck", "bg-emerald-500"], joined: ["gift", "bg-emerald-500"],
   follow: ["userPlus", "bg-blue-500"], reaction: ["heart", "bg-red-500"], comment: ["chat", "bg-blue-500"],
   reply: ["chat", "bg-zinc-500"], vote: ["poll", "bg-amber-500"], share: ["share", "bg-blue-500"],
-  group_post: ["users", "bg-zinc-500"], group_add: ["users", "bg-emerald-500"],
+  group_post: ["users", "bg-zinc-500"], group_add: ["users", "bg-emerald-500"], group_join: ["users", "bg-emerald-500"],
+  group_request: ["userPlus", "bg-blue-500"], group_idea: ["bulb", "bg-amber-500"], group_event: ["calendar", "bg-emerald-500"],
 };
 
 function FollowBack({ uid, actorId }) {
@@ -131,7 +140,7 @@ export default function NotificationsBell({ uid, items, onRefresh, onOpen }) {
                   )}
                 </span>
                 <span className="min-w-0 flex-1 text-sm text-zinc-300">
-                  <span className="font-semibold text-zinc-100">{n.actor?.full_name || "Someone"}</span> {text(n)}
+                  <span className="font-semibold text-zinc-100">{n.actor?.full_name || "Someone"}</span> {notifText(n)}
                   <span className="block text-[11px] text-zinc-600">{timeAgoShort(n.created_at)}</span>
                   {n.kind === "follow" && <FollowBack uid={uid} actorId={n.actor?.id} />}
                 </span>

@@ -35,6 +35,7 @@ export default function SocialPage({
   const [tab, setTab] = useState(routeSection(route?.tab) || "feed");
   const [mode, setMode] = useState("foryou");
   const [groupRoute, setGroupRoute] = useState(null);
+  const [groupCode, setGroupCode] = useState(null);
   const [postId, setPostId] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [me, setMe] = useState(cache.uid === uid ? cache.me : undefined); // undefined = loading, null = no profile yet
@@ -86,6 +87,7 @@ export default function SocialPage({
       if (section) setTab(section);
     }
     if (route.groupId) setGroupRoute(route.groupId);
+    if (route.groupCode) setGroupCode(route.groupCode);
     setOpenId(route.profileId && route.profileId !== uid ? route.profileId : null);
     if (route.profileId === uid) setTab("me");
     refreshNetwork();
@@ -242,7 +244,9 @@ export default function SocialPage({
 
       {tab === "discover" && <Discover me={me} setMe={updateMe} network={network} refreshNetwork={refreshNetwork} renderInvite={renderInvite} />}
 
-      {tab === "groups" && <Groups key={groupRoute ? `g-${route?.n}` : "groups"} {...shared} openGroupId={groupRoute} onJoinChallenge={() => setTab("compete")} />}
+      {tab === "groups" && (
+        <Groups key={groupRoute || groupCode ? `g-${route?.n}` : "groups"} {...shared} openGroupId={groupRoute} inviteCode={groupCode} onJoinChallenge={() => setTab("compete")} />
+      )}
 
       {tab === "compete" && <Compete {...shared} me={me} setMe={updateMe} />}
 

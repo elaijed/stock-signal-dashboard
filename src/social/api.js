@@ -156,8 +156,8 @@ export const acceptInvite = async (code) => check(await supabase.rpc("accept_inv
 // ---------- groups ----------
 export const myGroups = async () => check(await supabase.rpc("my_groups")) || [];
 export const groupDetail = async (gid) => check(await supabase.rpc("group_detail", { gid }));
-export async function createGroup(uid, name, description) {
-  return check(await supabase.from("groups").insert({ owner: uid, name: name.trim(), description: description?.trim() || null }).select().single());
+export async function createGroup(uid, name, description, extra = {}) {
+  return check(await supabase.from("groups").insert({ owner: uid, name: name.trim(), description: description?.trim() || null, ...extra }).select().single());
 }
 export async function deleteGroup(gid) {
   check(await supabase.from("groups").delete().eq("id", gid));
@@ -174,11 +174,45 @@ export async function addGroupSymbol(uid, gid, symbol) {
 export async function removeGroupSymbol(gid, symbol) {
   check(await supabase.from("group_symbols").delete().eq("group_id", gid).eq("symbol", symbol));
 }
-export async function addGroupPost(uid, gid, body) {
-  check(await supabase.from("group_posts").insert({ group_id: gid, user_id: uid, body: body.trim().slice(0, 500) }));
+export async function addGroupPost(uid, gid, body, symbol = null) {
+  check(await supabase.from("group_posts").insert({ group_id: gid, user_id: uid, body: body.trim().slice(0, 2000), symbol: symbol || null }));
 }
 export async function deleteGroupPost(id) {
   check(await supabase.from("group_posts").delete().eq("id", id));
+}
+
+// ---------- groups v2 (supabase/006_groups_v2.sql) ----------
+export const discoverGroups = async (q = "", cat = "") => check(await supabase.rpc("discover_groups", { q: q || null, cat: cat || null })) || [];
+export const joinGroup = async (gid, note = null, code = null) => check(await supabase.rpc("join_group", { gid, note, code }));
+export const groupByCode = async (code) => check(await supabase.rpc("group_by_code", { code }));
+export const respondGroupRequest = async (gid, who, accept) => check(await supabase.rpc("respond_group_request", { gid, who, accept }));
+export const setGroupRole = async (gid, who, role) => check(await supabase.rpc("set_group_role", { gid, who, new_role: role }));
+export const updateGroup = async (gid, f) =>
+  check(await supabase.rpc("update_group", { gid, p_name: f.name, p_description: f.description || "", p_privacy: f.privacy, p_category: f.category, p_rules: f.rules || "", p_posting: f.posting }));
+export const resetGroupInvite = async (gid) => check(await supabase.rpc("reset_group_invite", { gid }));
+export const pinGroupPost = async (pid, on) => check(await supabase.rpc("pin_group_post", { pid, on_off: on }));
+export const setIdeaStatus = async (iid, status) => check(await supabase.rpc("set_idea_status", { iid, new_status: status }));
+export async function cancelGroupRequest(uid, gid) {
+  check(await supabase.from("group_requests").delete().eq("group_id", gid).eq("user_id", uid));
+}
+export async function addGroupIdea(uid, gid, idea) {
+  check(await supabase.from("group_ideas").insert({ group_id: gid, user_id: uid, ...idea }));
+}
+export async function deleteGroupIdea(id) {
+  check(await supabase.from("group_ideas").delete().eq("id", id));
+}
+export async function voteGroupIdea(uid, ideaId, vote) {
+  if (!vote) check(await supabase.from("group_idea_votes").delete().eq("idea_id", ideaId).eq("user_id", uid));
+  else check(await supabase.from("group_idea_votes").upsert({ idea_id: ideaId, user_id: uid, vote }));
+}
+export async function addGroupEvent(uid, gid, ev) {
+  check(await supabase.from("group_events").insert({ group_id: gid, created_by: uid, ...ev }));
+}
+export async function deleteGroupEvent(id) {
+  check(await supabase.from("group_events").delete().eq("id", id));
+}
+export async function rsvpGroupEvent(uid, eventId, going) {
+  check(await supabase.from("group_event_rsvps").upsert({ event_id: eventId, user_id: uid, going }));
 }
 
 // ---------- practice portfolio, group challenge, sharing, streaks ----------
@@ -198,6 +232,7 @@ export function subscribeGroup(gid, onChange) {
   const ch = supabase
     .channel(`group-${gid}-${Math.random().toString(36).slice(2)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "group_posts", filter: `group_id=eq.${gid}` }, () => onChange())
+    .on("postgres_changes", { event: "*", schema: "public", table: "group_ideas", filter: `group_id=eq.${gid}` }, () => onChange())
     .subscribe();
   return () => supabase.removeChannel(ch);
 }

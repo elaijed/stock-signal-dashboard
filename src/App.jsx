@@ -2960,6 +2960,13 @@ export default function App() {
           localStorage.setItem("ssd_pending_post", postId);
         } catch (_) {}
       }
+      // Group invite links (?group=<code>) open that group once you're logged in.
+      const groupCode = new URLSearchParams(window.location.search).get("group");
+      if (groupCode && /^[a-z0-9]{4,32}$/i.test(groupCode)) {
+        try {
+          localStorage.setItem("ssd_pending_group", groupCode);
+        } catch (_) {}
+      }
       // A share link like .../#key=<finnhub key> saves that key on this device,
       // then the key is wiped from the address bar.
       const hashKey = new URLSearchParams(window.location.hash.slice(1)).get("key");
@@ -3502,14 +3509,18 @@ export default function App() {
   useEffect(() => {
     if (!ready || !userId) return;
     let id = null;
+    let groupCode = null;
     try {
       id = localStorage.getItem("ssd_pending_post");
       localStorage.removeItem("ssd_pending_post");
+      groupCode = localStorage.getItem("ssd_pending_group");
+      localStorage.removeItem("ssd_pending_group");
     } catch (_) {}
-    if (!id) return;
+    if (!id && !groupCode) return;
     history.replaceState(null, "", window.location.pathname + window.location.hash);
     goToPage("social");
-    setSocialRoute({ tab: "post", postId: Number(id), n: Date.now() });
+    if (groupCode) setSocialRoute({ tab: "groups", groupCode, n: Date.now() });
+    else setSocialRoute({ tab: "post", postId: Number(id), n: Date.now() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, userId]);
 
@@ -3676,7 +3687,7 @@ export default function App() {
     if (n.kind === "request") goSocial("requests");
     else if (n.kind === "accepted" || n.kind === "joined" || n.kind === "follow") openProfile(n.actor?.id);
     else if (["reaction", "comment", "reply", "vote"].includes(n.kind) && n.activity_id) goSocial("post", { postId: n.activity_id });
-    else if (n.kind === "group_add" || n.kind === "group_post") goSocial("groups", { groupId: n.group_id });
+    else if (n.kind.startsWith("group_") && n.group_id) goSocial("groups", { groupId: n.group_id });
     else if (n.kind === "share" && n.data?.symbol) openStock(n.data.symbol);
     else goSocial("feed");
   }
@@ -4001,19 +4012,12 @@ export default function App() {
           </nav>
         </header>
 
-        {apiKey && page === "home" && <TodayStrip ownedStats={ownedStats} alerts={alerts} breached={breached} incoming={incomingCount} unread={unread} onNav={goNav} />}
 
         {/* ===================== HOME ===================== */}
         {page === "home" &&
           (!apiKey || watchlist.length === 0 ? (
             <Welcome hasKey={!!apiKey} onAdd={(s) => (handleAddPick(s), goToPage("watchlist"))} onOpenSettings={() => setSettingsOpen(true)} />
           ) : null)}
-        {page === "home" && (
-          <div className="mb-4 grid gap-4 md:grid-cols-2">
-            <CallOfTheDay uid={userId} ensureSymbols={ensureSymbols} stockData={stockData} onOpenStock={openStock} onXpChange={onXpChange} onMilestone={onMilestone} />
-            <XpCard uid={userId} refreshKey={xpTick} onMilestone={onMilestone} compact />
-          </div>
-        )}
         {page === "home" && (
           <Home
             uid={userId}
@@ -4041,6 +4045,9 @@ export default function App() {
             quoteOf={quoteOf}
             getQuote={getQuote}
             onToast={setToast}
+            breached={breached}
+            callSlot={<CallOfTheDay uid={userId} ensureSymbols={ensureSymbols} stockData={stockData} onOpenStock={openStock} onXpChange={onXpChange} onMilestone={onMilestone} />}
+            xpSlot={<div className="w-full sm:w-64"><XpCard uid={userId} refreshKey={xpTick} onMilestone={onMilestone} compact /></div>}
           />
         )}
 
