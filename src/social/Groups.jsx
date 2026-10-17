@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "./Avatar.jsx";
 import { timeAgoShort } from "./Feed.jsx";
+import { Ic } from "../ui/icons.jsx";
+import { coverStyle, initials } from "./ui.jsx";
 import {
   myGroups, groupDetail, createGroup, deleteGroup, addGroupMember, removeGroupMember,
   addGroupSymbol, removeGroupSymbol, addGroupPost, deleteGroupPost, myNetwork,
@@ -55,8 +57,10 @@ function GroupChallenge({ gid, ensureSymbols, quoteOf, onOpenStock, onJoinChalle
       ) : ranked.length === 0 ? (
         <div className="text-xs text-zinc-500">No one in the group has picked yet. Pick 3 stocks in Compete and you'll show up here.</div>
       ) : (
-        <ol className="space-y-1">
-          {ranked.map((r, i) => (
+        <>
+        <Podium top={ranked.slice(0, 3)} />
+        {ranked.length > 3 && <ol className="mt-3 space-y-1 border-t border-zinc-800 pt-2">
+          {ranked.slice(3).map((r, j) => { const i = j + 3; return (
             <li key={r.user?.id || i} className="flex items-center gap-2 text-sm">
               <span className="w-5 text-center">{i + 1}</span>
               <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size="xs" />
@@ -74,10 +78,48 @@ function GroupChallenge({ gid, ensureSymbols, quoteOf, onOpenStock, onJoinChalle
                 {r.ret == null ? "…" : `${r.ret >= 0 ? "+" : "−"}${Math.abs(r.ret).toFixed(2)}%`}
               </span>
             </li>
-          ))}
-        </ol>
+          ); })}
+        </ol>}
+        </>
       )}
     </section>
+  );
+}
+
+const pct = (r) => (r == null ? "…" : `${r >= 0 ? "+" : "−"}${Math.abs(r).toFixed(2)}%`);
+
+// 2nd · 1st · 3rd, with the leader raised
+function Podium({ top }) {
+  const order = [top[1], top[0], top[2]];
+  const height = ["h-14", "h-20", "h-10"];
+  const place = [2, 1, 3];
+  return (
+    <div className="flex items-end justify-center gap-2 pt-2">
+      {order.map((r, i) =>
+        r ? (
+          <div key={r.user?.id || i} className="flex w-1/3 max-w-[7rem] flex-col items-center">
+            {place[i] === 1 && <Ic name="crown" size={16} className="mb-0.5 text-amber-400" />}
+            <Avatar url={r.user?.avatar_url} name={r.user?.full_name} size={place[i] === 1 ? "sm" : "xs"} />
+            <div className="mt-1 w-full truncate text-center text-xs font-semibold text-zinc-200">{r.me ? "You" : r.user?.full_name?.split(" ")[0]}</div>
+            <div className={`text-xs font-semibold tabular-nums ${r.ret == null ? "text-zinc-500" : r.ret >= 0 ? "text-emerald-400" : "text-red-400"}`}>{pct(r.ret)}</div>
+            <div className={`mt-1 flex w-full items-start justify-center rounded-t-lg pt-1 text-sm font-bold ${height[i]} ${place[i] === 1 ? "bg-amber-400/25 text-amber-400" : "bg-zinc-800 text-zinc-400"}`}>
+              {place[i]}
+            </div>
+          </div>
+        ) : (
+          <div key={i} className="w-1/3 max-w-[7rem]" />
+        )
+      )}
+    </div>
+  );
+}
+
+function Cover({ name, className = "" }) {
+  return (
+    <div className={`relative flex items-center justify-center overflow-hidden font-display font-bold text-white ${className}`} style={coverStyle(name)}>
+      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle at 25% 30%, #fff 0 2px, transparent 3px), radial-gradient(circle at 70% 65%, #fff 0 1.5px, transparent 2.5px)", backgroundSize: "40px 40px, 28px 28px" }} />
+      <span className="relative">{initials(name)}</span>
+    </div>
   );
 }
 
@@ -149,11 +191,13 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-zinc-400 hover:text-zinc-100">
-        ← Groups
+      <button onClick={onBack} className="ss-tap -ml-2 flex min-h-11 items-center gap-1 rounded-full px-2 text-sm font-medium text-zinc-400 hover:text-zinc-100">
+        <Ic name="chevronLeft" size={18} /> Groups
       </button>
-      <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-blue-950/40 to-zinc-900 p-4">
-        <h2 className="text-xl font-bold text-zinc-50">{g.name}</h2>
+      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
+        <Cover name={g.name} className="h-24 text-3xl sm:h-32 sm:text-4xl" />
+        <div className="p-4">
+        <h2 className="font-display text-2xl font-bold text-zinc-50">{g.name}</h2>
         {g.description && <p className="mt-1 text-sm text-zinc-400">{g.description}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="flex -space-x-2">
@@ -164,6 +208,7 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
           <span className="text-xs text-zinc-400">
             {g.members.length} member{g.members.length === 1 ? "" : "s"}
           </span>
+        </div>
         </div>
       </div>
       {err && <div className="text-sm text-red-400">{err}</div>}
@@ -177,9 +222,12 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> live
             </span>
           </div>
-          <div ref={chatRef} className="h-[22rem] space-y-2 overflow-y-auto px-3 py-3">
+          <div ref={chatRef} className="h-[60vh] space-y-2 overflow-y-auto px-3 py-3 md:h-[26rem]">
             {g.posts.length === 0 ? (
-              <div className="py-10 text-center text-sm text-zinc-500">No messages yet — say hi </div>
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-zinc-500">
+                <Ic name="chat" size={28} className="text-zinc-600" />
+                No messages yet. Say hi to the group.
+              </div>
             ) : (
               [...g.posts].reverse().map((p) => (
                 <div key={p.id} className={`flex gap-2 ${p.mine ? "flex-row-reverse" : ""}`}>
@@ -188,7 +236,7 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
                       <Avatar url={p.author?.avatar_url} name={p.author?.full_name} size="xs" />
                     </button>
                   )}
-                  <div className={`group max-w-[80%] rounded-2xl px-3 py-1.5 ${p.mine ? "rounded-br-sm bg-blue-600 text-white" : "rounded-bl-sm bg-zinc-800 text-zinc-200"}`}>
+                  <div className={`group max-w-[80%] rounded-2xl px-3.5 py-2 shadow-sm ${p.mine ? "rounded-br-md bg-blue-600 text-white" : "rounded-bl-md bg-zinc-800 text-zinc-200"}`}>
                     {!p.mine && <div className="text-[11px] font-semibold text-zinc-400">{p.author?.full_name}</div>}
                     {p.symbol && (
                       <button onClick={() => onOpenStock?.(p.symbol)} className={`mb-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.mine ? "bg-blue-500 text-white" : "bg-zinc-700 text-blue-300"}`}>
@@ -209,20 +257,21 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
               ))
             )}
           </div>
-          <div className="flex gap-2 border-t border-zinc-800 p-2">
+          <div className="sticky bottom-16 z-10 flex gap-2 rounded-b-xl border-t border-zinc-800 bg-zinc-900 p-2 sm:bottom-0">
             <input
               value={post}
               onChange={(e) => setPost(e.target.value.slice(0, 500))}
               onKeyDown={(e) => e.key === "Enter" && post.trim() && run(() => addGroupPost(uid, gid, post).then(() => setPost("")))}
               placeholder="Message the group…"
-              className={`${input} min-w-0 flex-1`}
+              className={`${input} min-h-11 min-w-0 flex-1 !rounded-full px-4`}
             />
             <button
               disabled={!post.trim()}
+              aria-label="Send"
               onClick={() => run(() => addGroupPost(uid, gid, post).then(() => setPost("")))}
-              className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}
+              className="ss-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40"
             >
-              Send
+              <Ic name="send" size={18} />
             </button>
           </div>
         </section>
@@ -247,32 +296,34 @@ function GroupPage({ uid, gid, onBack, ensureSymbols, quoteOf, onOpenStock, onOp
             {g.symbols.length === 0 ? (
               <div className="text-xs text-zinc-500">Add stocks the group is watching together.</div>
             ) : (
-              <ul className="divide-y divide-zinc-800">
+              <div className="flex flex-wrap gap-2">
                 {g.symbols.map((s) => {
                   const q = quoteOf(s.symbol)?.quote;
+                  const up = q?.dp >= 0;
                   return (
-                    <li key={s.symbol} className="flex items-center gap-2 py-1.5">
-                      <button onClick={() => onOpenStock?.(s.symbol)} className="w-16 text-left text-sm font-semibold text-zinc-100 hover:text-blue-300">
-                        {s.symbol}
+                    <div key={s.symbol} className={`group flex items-center gap-1.5 rounded-full border py-1 pl-3 pr-1 ${q ? (up ? "border-emerald-500/40 bg-emerald-500/10" : "border-red-500/40 bg-red-500/10") : "border-zinc-700 bg-zinc-800"}`}>
+                      <button onClick={() => onOpenStock?.(s.symbol)} className="text-left">
+                        <span className="text-sm font-bold text-zinc-100">{s.symbol}</span>
+                        {q && (
+                          <span className={`ml-1.5 text-xs font-semibold tabular-nums ${up ? "text-emerald-400" : "text-red-400"}`}>
+                            {up ? "+" : "−"}{Math.abs(q.dp).toFixed(2)}%
+                          </span>
+                        )}
                       </button>
-                      <span className="flex-1 text-xs tabular-nums text-zinc-400">
-                        {q ? `$${q.c.toFixed(2)}` : "…"}{" "}
-                        {q && <span className={q.dp >= 0 ? "text-emerald-400" : "text-red-400"}>{q.dp >= 0 ? "+" : ""}{q.dp.toFixed(2)}%</span>}
-                      </span>
                       {mine.has(s.symbol) ? (
-                        <span className="text-[11px] text-zinc-600">✓ yours</span>
+                        <span title="On your list" className="flex h-6 w-6 items-center justify-center text-zinc-500"><Ic name="check" size={13} /></span>
                       ) : (
-                        <button onClick={() => onAddToWatchlist?.(s.symbol)} className="text-[11px] text-blue-400 hover:underline">
-                          + mine
+                        <button onClick={() => onAddToWatchlist?.(s.symbol)} title="Add to my list" className="flex h-6 w-6 items-center justify-center rounded-full text-blue-400 hover:bg-zinc-700">
+                          <Ic name="plus" size={13} />
                         </button>
                       )}
-                      <button onClick={() => run(() => removeGroupSymbol(gid, s.symbol))} className="text-xs text-zinc-600 hover:text-red-300" title="Remove">
-                        ✕
+                      <button onClick={() => run(() => removeGroupSymbol(gid, s.symbol))} title="Remove" className="flex h-6 w-6 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-700 hover:text-red-300">
+                        <Ic name="x" size={13} />
                       </button>
-                    </li>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             )}
           </section>
 
@@ -421,9 +472,7 @@ export default function Groups(props) {
       ) : (
         groups.map((g) => (
           <button key={g.id} onClick={() => setOpen(g.id)} className="flex w-full items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-left hover:border-zinc-700">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 text-lg font-bold text-white">
-              {g.name[0]?.toUpperCase()}
-            </div>
+            <Cover name={g.name} className="h-12 w-12 shrink-0 rounded-xl text-base" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-zinc-100">{g.name}</div>
               <div className="truncate text-xs text-zinc-500">
