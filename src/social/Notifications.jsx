@@ -35,7 +35,7 @@ export function notifText(n) {
     case "group_request":
       return `wants to join “${d.name || ""}”${d.note ? `: “${d.note}”` : ""}`;
     case "group_idea":
-      return `pitched ${d.symbol || "a stock"} ${d.stance === "bear" ? "(avoid)" : "(buy)"} in “${d.name || ""}”. Vote now`;
+      return `shared a stock idea, ${d.symbol || "a stock"} ${d.stance === "bear" ? "(avoid)" : "(buy)"}, in “${d.name || ""}”. Vote now`;
     case "group_event":
       return `scheduled “${d.title || "a meeting"}” in “${d.name || ""}”${d.starts_at ? ` for ${new Date(d.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : ""}`;
     default:

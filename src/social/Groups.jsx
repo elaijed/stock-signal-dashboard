@@ -18,12 +18,12 @@ import {
 
 // ---------- constants ----------
 export const CATEGORIES = [
-  { id: "club", label: "Investing club", icon: "briefcase" },
-  { id: "school", label: "School / uni", icon: "cap" },
-  { id: "strategy", label: "Strategy", icon: "target" },
-  { id: "sector", label: "Sector", icon: "chart" },
-  { id: "learning", label: "Learning", icon: "book" },
   { id: "friends", label: "Friends", icon: "users" },
+  { id: "sector", label: "Sector / theme", icon: "chart" },
+  { id: "strategy", label: "Strategy", icon: "target" },
+  { id: "learning", label: "Learning", icon: "book" },
+  { id: "school", label: "School / uni", icon: "cap" },
+  { id: "club", label: "Club", icon: "briefcase" },
   { id: "other", label: "Other", icon: "hash" },
 ];
 const CAT = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]));
@@ -126,7 +126,7 @@ async function copyText(text, toast, msg = "Link copied") {
 // ---------- create / edit ----------
 function GroupForm({ initial, onSubmit, submitLabel, busy, err }) {
   const [f, setF] = useState({
-    name: "", description: "", category: "club", privacy: "request", posting: "everyone", rules: "", ...(initial || {}),
+    name: "", description: "", category: "friends", privacy: "request", posting: "everyone", rules: "", ...(initial || {}),
   });
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v?.target ? v.target.value : v }));
   return (
@@ -138,11 +138,11 @@ function GroupForm({ initial, onSubmit, submitLabel, busy, err }) {
       className="space-y-4 p-4"
     >
       <Field label="Name">
-        <input value={f.name} onChange={(e) => set("name")(e.target.value.slice(0, 50))} placeholder="e.g. Uni Investing Club" className={inputCls} autoFocus />
+        <input value={f.name} onChange={(e) => set("name")(e.target.value.slice(0, 50))} placeholder="e.g. Tech stock fans, Dividend hunters, Our family" className={inputCls} autoFocus />
       </Field>
       <Field label="What's it about?" hint="Shown to people deciding whether to join.">
         <textarea value={f.description || ""} onChange={(e) => set("description")(e.target.value.slice(0, 500))} rows={3}
-          placeholder="We meet every Thursday, pitch one stock each, and vote on what goes in our practice fund." className={`${inputCls} resize-none`} />
+          placeholder="What the group is for, and what members share here." className={`${inputCls} resize-none`} />
       </Field>
       <Field label="Type">
         <div className="flex flex-wrap gap-2">
@@ -165,7 +165,7 @@ function GroupForm({ initial, onSubmit, submitLabel, busy, err }) {
           onChange={set("posting")}
           options={[
             { id: "everyone", label: "Everyone", icon: "chat", help: "A normal group chat." },
-            { id: "admins", label: "Only admins", icon: "megaphone", help: "An announcement channel: admins share, members receive. Members can still pitch and vote." },
+            { id: "admins", label: "Only admins", icon: "megaphone", help: "An announcement channel: admins share news and alerts, members receive them. Members can still share ideas and vote." },
           ]}
         />
       </Field>
@@ -201,7 +201,7 @@ function MyGroupCard({ g, onOpen }) {
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {g.requests > 0 && <Chip icon="userPlus" tone="bg-red-500/15 text-red-500">{g.requests} to approve</Chip>}
-          {g.open_ideas > 0 && <Chip icon="bulb" tone="bg-amber-500/15 text-amber-500">{g.open_ideas} open pitch{g.open_ideas === 1 ? "" : "es"}</Chip>}
+          {g.open_ideas > 0 && <Chip icon="bulb" tone="bg-amber-500/15 text-amber-500">{g.open_ideas} new idea{g.open_ideas === 1 ? "" : "s"}</Chip>}
           {g.next_event && <Chip icon="calendar" tone="bg-emerald-500/15 text-emerald-500">{new Date(g.next_event.starts_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</Chip>}
           {g.posting === "admins" && <Chip icon="megaphone">Announcements</Chip>}
         </div>
@@ -383,14 +383,14 @@ export default function Groups(props) {
             ))}
           </div>
         ) : groups.length === 0 ? (
-          <EmptyState icon="users" title="Start or join a club"
+          <EmptyState icon="users" title="Start or join a group"
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <button onClick={() => setCreating(true)} className={btn.primary}><Ic name="plus" size={16} /> Create a group</button>
                 <button onClick={() => setView("find")} className={btn.quiet}><Ic name="search" size={16} /> Find groups</button>
               </div>
             }>
-            Groups have a chat, stock pitches the group votes on, a shared watchlist, meetings and a monthly challenge. Perfect for an investing club.
+            Groups are for anyone: friends, a sector you love, a strategy, a class or a club. Each has a chat, stock ideas the group votes on, a shared watchlist, events and a monthly challenge.
           </EmptyState>
         ) : (
           <div className="space-y-2.5">
@@ -456,9 +456,9 @@ export default function Groups(props) {
 // ---------- group page ----------
 const SECTIONS = [
   { id: "chat", label: "Chat", icon: "chat" },
-  { id: "pitches", label: "Pitches", icon: "bulb" },
+  { id: "pitches", label: "Ideas", icon: "bulb" },
   { id: "watchlist", label: "Watchlist", icon: "eye" },
-  { id: "meetings", label: "Meetings", icon: "calendar" },
+  { id: "meetings", label: "Events", icon: "calendar" },
   { id: "members", label: "Members", icon: "users" },
 ];
 
@@ -678,7 +678,7 @@ function GroupPage({ uid, gid, code, onBack, ensureSymbols, quoteOf, getQuote, o
         <div className="space-y-4 p-4">
           <p className="text-sm text-zinc-400">
             {confirm === "delete"
-              ? "The chat, pitches, meetings and watchlist are deleted for everyone. This can't be undone."
+              ? "The chat, ideas, events and watchlist are deleted for everyone. This can't be undone."
               : g.privacy === "public" ? "You can join again any time." : "You'll need to be let back in to rejoin."}
           </p>
           <div className="flex gap-2">
@@ -721,7 +721,7 @@ function Preview({ g }) {
       <section className="grid grid-cols-3 gap-2 text-center">
         {[
           [g.member_count, "members"],
-          [g.idea_count, "stock pitches"],
+          [g.idea_count, "stock ideas"],
           [(g.symbols || []).length, "stocks watched"],
         ].map(([n, l]) => (
           <div key={l} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
@@ -737,7 +737,7 @@ function Preview({ g }) {
           ))}
         </div>
       )}
-      <p className="text-center text-sm text-zinc-500">Join to see the chat, vote on pitches and come to meetings.</p>
+      <p className="text-center text-sm text-zinc-500">Join to see the chat, vote on ideas and see events.</p>
     </div>
   );
 }
@@ -878,7 +878,7 @@ function ideaReturn(i, quoteOf) {
 
 const STATUS = {
   open: ["Voting", "bg-blue-500/15 text-blue-500"],
-  adopted: ["Adopted", "bg-emerald-500/15 text-emerald-500"],
+  adopted: ["Group pick", "bg-emerald-500/15 text-emerald-500"],
   passed: ["Passed", "bg-zinc-800 text-zinc-400"],
   closed: ["Closed", "bg-zinc-800 text-zinc-400"],
 };
@@ -909,7 +909,7 @@ function PitchForm({ uid, gid, run, getQuote, quoteOf, onDone }) {
       return setErr(`Couldn't find a price for ${sym}. Check the ticker.`);
     }
     const t = parseFloat(target);
-    const ok = await run(() => addGroupIdea(uid, gid, { symbol: sym, stance, thesis: thesis.trim(), entry_price: entry, target_price: t > 0 ? t : null }), "Pitch posted. Members can vote now.");
+    const ok = await run(() => addGroupIdea(uid, gid, { symbol: sym, stance, thesis: thesis.trim(), entry_price: entry, target_price: t > 0 ? t : null }), "Idea shared. Members can vote now.");
     setBusy(false);
     if (ok) onDone();
   }
@@ -934,7 +934,7 @@ function PitchForm({ uid, gid, run, getQuote, quoteOf, onDone }) {
           </div>
         </Field>
       </div>
-      <Field label="Why? (your pitch)" hint="What does the company do, why now, and what could go wrong?">
+      <Field label="Why?" hint="What does the company do, why now, and what could go wrong?">
         <textarea value={thesis} onChange={(e) => setThesis(e.target.value.slice(0, 1500))} rows={5} className={`${inputCls} resize-none`}
           placeholder="Earnings beat 3 quarters in a row, the new product is selling well, and it's cheaper than competitors. Risk: a slowdown in consumer spending." />
       </Field>
@@ -942,8 +942,8 @@ function PitchForm({ uid, gid, run, getQuote, quoteOf, onDone }) {
         <input value={target} onChange={(e) => setTarget(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="e.g. 250" className={inputCls} />
       </Field>
       {err && <div className="text-sm text-red-400">{err}</div>}
-      <button disabled={busy} className={`${btn.primary} w-full`}>{busy ? "Posting…" : "Post pitch"}</button>
-      <p className="text-center text-xs text-zinc-500">Today's price is saved so the group can see how the call does.</p>
+      <button disabled={busy} className={`${btn.primary} w-full`}>{busy ? "Sharing…" : "Share idea"}</button>
+      <p className="text-center text-xs text-zinc-500">Today's price is saved so the group can see how the idea does.</p>
     </form>
   );
 }
@@ -976,7 +976,7 @@ function IdeaCard({ i, g, uid, run, quoteOf, onOpenStock, onOpenProfile }) {
         </div>
         <div className="shrink-0 text-right">
           <div className={`font-display text-lg font-bold tabular-nums ${pctColor(ret)}`}>{ret == null ? "…" : signedPct(ret)}</div>
-          <div className="text-[11px] text-zinc-500">since pitch</div>
+          <div className="text-[11px] text-zinc-500">since shared</div>
         </div>
       </div>
 
@@ -987,7 +987,7 @@ function IdeaCard({ i, g, uid, run, quoteOf, onOpenStock, onOpenProfile }) {
 
       <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-zinc-950/50 p-2.5 text-center text-xs">
         <div>
-          <div className="text-zinc-500">Pitched at</div>
+          <div className="text-zinc-500">Shared at</div>
           <div className="font-semibold tabular-nums text-zinc-200">{i.entry_price ? money(Number(i.entry_price)) : "–"}</div>
         </div>
         <div>
@@ -1036,17 +1036,17 @@ function IdeaCard({ i, g, uid, run, quoteOf, onOpenStock, onOpenProfile }) {
         <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
           {g.is_admin && open && (
             <>
-              <button onClick={() => run(() => setIdeaStatus(i.id, "adopted"), `${i.symbol} adopted by the group`)} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}><Ic name="check" size={14} /> Adopt</button>
+              <button onClick={() => run(() => setIdeaStatus(i.id, "adopted"), `${i.symbol} is now a group pick`)} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}><Ic name="check" size={14} /> Make group pick</button>
               <button onClick={() => run(() => setIdeaStatus(i.id, "passed"), "Marked as passed")} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}>Pass</button>
             </>
           )}
           {g.is_admin && i.status === "adopted" && (
-            <button onClick={() => run(() => setIdeaStatus(i.id, "closed"), "Position closed")} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}>Close position</button>
+            <button onClick={() => run(() => setIdeaStatus(i.id, "closed"), "Idea closed")} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}>Close idea</button>
           )}
           {g.is_admin && !open && (
             <button onClick={() => run(() => setIdeaStatus(i.id, "open"), "Voting reopened")} className={`${btn.soft} !min-h-9 !px-3 !text-xs`}>Reopen voting</button>
           )}
-          <button onClick={() => run(() => deleteGroupIdea(i.id), "Pitch deleted")} className="ml-auto text-xs text-zinc-500 hover:text-red-400">Delete</button>
+          <button onClick={() => run(() => deleteGroupIdea(i.id), "Idea deleted")} className="ml-auto text-xs text-zinc-500 hover:text-red-400">Delete</button>
         </div>
       )}
     </article>
@@ -1068,16 +1068,16 @@ function Pitches({ g, uid, gid, run, quoteOf, getQuote, onOpenStock, onOpenProfi
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-display text-lg font-bold text-zinc-100">Stock pitches</h3>
-            <p className="text-sm text-zinc-500">Pitch a stock, the group votes, and the app tracks how every call does.</p>
+            <h3 className="font-display text-lg font-bold text-zinc-100">Stock ideas</h3>
+            <p className="text-sm text-zinc-500">Share a stock idea, the group votes, and the app tracks how every idea does.</p>
           </div>
-          <button onClick={() => setComposing(true)} className={`${btn.primary} shrink-0 !min-h-10 !px-4`}><Ic name="plus" size={16} /> Pitch</button>
+          <button onClick={() => setComposing(true)} className={`${btn.primary} shrink-0 !min-h-10 !px-4`}><Ic name="plus" size={16} /> Share idea</button>
         </div>
         {adopted.length > 0 && (
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-xl bg-zinc-950/50 p-2">
               <div className="font-display text-lg font-bold text-zinc-100">{adopted.length}</div>
-              <div className="text-[11px] text-zinc-500">adopted</div>
+              <div className="text-[11px] text-zinc-500">group picks</div>
             </div>
             <div className="rounded-xl bg-zinc-950/50 p-2">
               <div className={`font-display text-lg font-bold ${pctColor(avg)}`}>{avg == null ? "…" : signedPct(avg)}</div>
@@ -1096,7 +1096,7 @@ function Pitches({ g, uid, gid, run, quoteOf, getQuote, onOpenStock, onOpenProfi
           {[
             ["all", "All"],
             ["open", "Voting"],
-            ["adopted", "Adopted"],
+            ["adopted", "Group picks"],
           ].map(([id, l]) => (
             <button key={id} onClick={() => setFilter(id)}
               className={`ss-tap rounded-full border px-3 py-1.5 text-sm font-medium ${filter === id ? "border-zinc-100 bg-zinc-100 text-zinc-950" : "border-zinc-700 text-zinc-300"}`}>{l}</button>
@@ -1105,8 +1105,8 @@ function Pitches({ g, uid, gid, run, quoteOf, getQuote, onOpenStock, onOpenProfi
       )}
 
       {ideas.length === 0 ? (
-        <EmptyState icon="bulb" title="No pitches yet" action={<button onClick={() => setComposing(true)} className={btn.primary}>Pitch the first stock</button>}>
-          This is how investing clubs decide what to buy: one person makes the case, everyone votes, and the record shows who's good at it.
+        <EmptyState icon="bulb" title="No ideas yet" action={<button onClick={() => setComposing(true)} className={btn.primary}>Share the first idea</button>}>
+          Someone makes the case for a stock, everyone votes, and the record shows whose ideas work out.
         </EmptyState>
       ) : shown.length === 0 ? (
         <div className="py-6 text-center text-sm text-zinc-500">Nothing here.</div>
@@ -1114,7 +1114,7 @@ function Pitches({ g, uid, gid, run, quoteOf, getQuote, onOpenStock, onOpenProfi
         shown.map((i) => <IdeaCard key={i.id} i={i} g={g} uid={uid} run={run} quoteOf={quoteOf} onOpenStock={onOpenStock} onOpenProfile={onOpenProfile} />)
       )}
 
-      <Sheet open={composing} onClose={() => setComposing(false)} title="Pitch a stock">
+      <Sheet open={composing} onClose={() => setComposing(false)} title="Share a stock idea">
         <PitchForm uid={uid} gid={gid} run={run} getQuote={getQuote} quoteOf={quoteOf} onDone={() => setComposing(false)} />
       </Sheet>
     </div>
@@ -1270,7 +1270,7 @@ function Meetings({ g, uid, gid, run }) {
     if (!f.title.trim() || !f.when) return;
     const ok = await run(
       () => addGroupEvent(uid, gid, { title: f.title.trim(), starts_at: new Date(f.when).toISOString(), location: f.location.trim() || null, details: f.details.trim() || null }),
-      "Meeting added. Members were notified."
+      "Event added. Members were notified."
     );
     if (ok) {
       setAdding(false);
@@ -1282,14 +1282,14 @@ function Meetings({ g, uid, gid, run }) {
     <div className="space-y-3">
       <section className="flex items-start justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
         <div>
-          <h3 className="font-display text-lg font-bold text-zinc-100">Meetings</h3>
-          <p className="text-sm text-zinc-500">Club meetings, calls and pitch nights. RSVP so the host knows who's coming.</p>
+          <h3 className="font-display text-lg font-bold text-zinc-100">Events</h3>
+          <p className="text-sm text-zinc-500">Calls, meetups, earnings watch-alongs, anything. RSVP so the host knows who's coming.</p>
         </div>
         {g.is_admin && <button onClick={() => setAdding(true)} className={`${btn.primary} shrink-0 !min-h-10 !px-4`}><Ic name="plus" size={16} /> Add</button>}
       </section>
       {events.length === 0 ? (
         <EmptyState icon="calendar" title="Nothing scheduled">
-          {g.is_admin ? "Add your next meeting and everyone in the group gets a notification." : "When an admin schedules a meeting, it shows up here."}
+          {g.is_admin ? "Add an event and everyone in the group gets a notification." : "When an admin adds an event, it shows up here."}
         </EmptyState>
       ) : (
         events.map((ev) => {
@@ -1325,17 +1325,17 @@ function Meetings({ g, uid, gid, run }) {
                     Can't make it
                   </button>
                   <span className="text-xs text-zinc-500">{ev.going} going</span>
-                  {g.is_admin && <button onClick={() => run(() => deleteGroupEvent(ev.id), "Meeting removed")} className="ml-auto text-xs text-zinc-500 hover:text-red-400">Remove</button>}
+                  {g.is_admin && <button onClick={() => run(() => deleteGroupEvent(ev.id), "Event removed")} className="ml-auto text-xs text-zinc-500 hover:text-red-400">Remove</button>}
                 </div>
               </div>
             </article>
           );
         })
       )}
-      <Sheet open={adding} onClose={() => setAdding(false)} title="New meeting">
+      <Sheet open={adding} onClose={() => setAdding(false)} title="New event">
         <form onSubmit={save} className="space-y-4 p-4">
           <Field label="Title">
-            <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value.slice(0, 100) })} placeholder="Weekly pitch night" className={inputCls} autoFocus />
+            <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value.slice(0, 100) })} placeholder="Sunday stock chat" className={inputCls} autoFocus />
           </Field>
           <Field label="When">
             <input type="datetime-local" value={f.when} onChange={(e) => setF({ ...f, when: e.target.value })} className={inputCls} />
@@ -1344,9 +1344,9 @@ function Meetings({ g, uid, gid, run }) {
             <input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value.slice(0, 300) })} placeholder="Library room 2, or https://meet.google.com/…" className={inputCls} />
           </Field>
           <Field label="Details (optional)">
-            <textarea value={f.details} onChange={(e) => setF({ ...f, details: e.target.value.slice(0, 1000) })} rows={3} placeholder="Bring one stock to pitch. 5 minutes each." className={`${inputCls} resize-none`} />
+            <textarea value={f.details} onChange={(e) => setF({ ...f, details: e.target.value.slice(0, 1000) })} rows={3} placeholder="Bring one stock you're watching." className={`${inputCls} resize-none`} />
           </Field>
-          <button disabled={!f.title.trim() || !f.when} className={`${btn.primary} w-full`}>Add meeting</button>
+          <button disabled={!f.title.trim() || !f.when} className={`${btn.primary} w-full`}>Add event</button>
         </form>
       </Sheet>
     </div>
