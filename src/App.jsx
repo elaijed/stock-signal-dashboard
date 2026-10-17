@@ -32,6 +32,7 @@ import { challengeBoard } from "./social/api.js";
 import PublicSite from "./landing/PublicSite.jsx";
 import KeyGuide from "./landing/KeyGuide.jsx";
 import CallOfTheDay from "./game/CallOfTheDay.jsx";
+import Learn from "./learn/Learn.jsx";
 import XpCard from "./game/XpCard.jsx";
 import InviteRewards, { practiceBonus } from "./game/InviteRewards.jsx";
 import { AboutPage, ContactPage, PrivacyPage, TermsPage } from "./landing/InfoPages.jsx";
@@ -1884,13 +1885,14 @@ const NAV = [
   { id: "home", label: "Home", icon: "home" },
   { id: "watchlist", label: "My Stocks", icon: "chart", also: ["owned"] },
   { id: "recommendations", label: "Top Picks", icon: "trophy" },
+  { id: "learn", label: "Learn", icon: "cap", also: ["glossary"] },
   { id: "social", label: "Social", icon: "users" },
 ];
 
 function BottomNav({ page, onGo, badges }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-900 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-5">
         {NAV.map((t) => (
           <button
             key={t.id}
@@ -2983,7 +2985,7 @@ export default function App() {
       }
       setKeyLoaded(true);
       const savedPage = await storageGet(KEY_PAGE);
-      if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn"].includes(savedPage)) setPage(savedPage);
+      if (["home", "watchlist", "owned", "practice", "recommendations", "social", "learn", "glossary"].includes(savedPage)) setPage(savedPage);
     })();
   }, []);
 
@@ -3945,6 +3947,7 @@ export default function App() {
     { id: "home", label: "Home", count: null },
     { id: "watchlist", label: "My Stocks", count: watchlist.length, also: ["owned", "practice"] },
     { id: "recommendations", label: "Top Picks", count: null },
+    { id: "learn", label: "Learn", count: null, also: ["glossary"] },
     { id: "social", label: "Social", count: null, badge: incomingCount },
   ];
   // Watching / Owned switch shown at the top of My Stocks
@@ -4071,7 +4074,15 @@ export default function App() {
         )}
 
         {/* ===================== LEARN ===================== */}
-        {page === "learn" && <GlossaryPage />}
+        {page === "learn" && <Learn uid={userId} onXp={onXpChange} onGlossary={() => goToPage("glossary")} />}
+        {page === "glossary" && (
+          <div>
+            <button onClick={() => goToPage("learn")} className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-zinc-400 hover:text-zinc-100">
+              <Ic name="chevronLeft" size={16} /> Learn
+            </button>
+            <GlossaryPage />
+          </div>
+        )}
 
         {/* fired price alerts — shown on every page until dismissed */}
         <TriggeredAlertsBanner alerts={alerts} onDismiss={deleteAlert} />

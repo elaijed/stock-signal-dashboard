@@ -52,7 +52,7 @@ function Learn({ onGlossary }) {
       <div className="text-base font-semibold text-zinc-100">{l.title}</div>
       <p className="mt-1 text-sm leading-relaxed text-zinc-300">{l.text}</p>
       <button onClick={onGlossary} className="mt-2 text-xs font-medium text-blue-400 hover:underline">
-        Open the full glossary →
+        Take a 5-minute lesson →
       </button>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {LESSONS.map((x, j) => (
